@@ -54,7 +54,7 @@ def load_data():
     df = pd.read_csv(file_path)
     
     # 💡 '로프'를 '와이어로프'로 묶어주는 코드 추가
-    df['매다는 장치[종류]'] = df['매다는 장치[종류]'].replace('로프', '와이어로프')
+    df['매다는 장치 [종류]'] = df['매다는 장치 [종류]'].replace('로프', '와이어로프')
     
     return df
 
