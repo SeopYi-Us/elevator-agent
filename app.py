@@ -59,7 +59,7 @@ def load_data():
     return df
 
 df = load_data()
-exclude_cols = ['접수일자', '접수번호', '부적합내용', '비고', '항목별 제출서류', '항목', 'Unnamed: 79', '신청자명', '모델']
+exclude_cols = ['접수일자', '접수번호', '부적합내용', '비고', '항목별 제출서류', '항목', 'Unnamed: 79', '신청업체', '모델']
 input_cols = [col for col in df.columns if col not in exclude_cols]
 
 user_inputs = {}
