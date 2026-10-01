@@ -50,12 +50,16 @@ st.sidebar.header("📋 세부 제원 입력")
 
 @st.cache_data
 def load_data():
-    # 💡 엑셀 파일 경로를 절대 경로에서 상대 경로(파일명)로 수정 완료
     file_path = "개별설계심사현황 1회차(접수일자20230701_20260630)_최종 완성 자료(마스킹 완료)_최종.csv"
-    return pd.read_csv(file_path)
+    df = pd.read_csv(file_path)
+    
+    # 💡 '로프'를 '와이어로프'로 묶어주는 코드 추가
+    df['매다는 장치[종류]'] = df['매다는 장치[종류]'].replace('로프', '와이어로프')
+    
+    return df
 
 df = load_data()
-exclude_cols = ['접수일자', '접수번호', '부적합내용', '비고', '항목별 제출서류', '항목', 'Unnamed: 79']
+exclude_cols = ['접수일자', '접수번호', '부적합내용', '비고', '항목별 제출서류', '항목', 'Unnamed: 79', '신청자명', '모델']
 input_cols = [col for col in df.columns if col not in exclude_cols]
 
 user_inputs = {}
