@@ -5,9 +5,34 @@ import google.generativeai as genai
 import PyPDF2
 
 # =====================================================================
-# 1. 기본 설정 및 엔진 초기화
+# 1. 기본 설정
 # =====================================================================
-st.set_page_config(page_title="승강기 설계심사 에이전트", layout="wide")
+st.set_page_config(
+    page_title="승강기 설계심사 에이전트",
+    page_icon="🛗",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# 전체 디자인 (카드형 섹션, 여백, 버튼 스타일)
+st.markdown("""
+<style>
+    .block-container { padding-top: 2.2rem; padding-bottom: 3rem; }
+    .hero-title { font-size: 2rem; font-weight: 800; margin-bottom: 0.2rem; }
+    .hero-sub { font-size: 0.98rem; opacity: 0.75; margin-bottom: 1.2rem; }
+    .side-title { font-size: 1.15rem; font-weight: 800; margin: 0.2rem 0 0.6rem 0; }
+    .side-note { font-size: 0.78rem; opacity: 0.7; line-height: 1.5; margin: 0.4rem 0 0.8rem 0; }
+    .section-label { font-size: 0.85rem; font-weight: 700; opacity: 0.8; margin-top: 0.6rem; }
+    div[data-testid="stExpander"] { border-radius: 12px; }
+    div[data-testid="stExpander"] summary p { font-weight: 700; }
+    button[kind="primary"] { border-radius: 10px; font-weight: 700; height: 2.8rem; }
+    div[data-testid="stMetric"] {
+        background: rgba(128,128,128,0.08);
+        border-radius: 12px;
+        padding: 0.8rem 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
@@ -20,11 +45,15 @@ if "messages" not in st.session_state:
 if "submit_from_button" not in st.session_state:
     st.session_state.submit_from_button = False
 
-st.title("🔍 승강기 설계심사 전문 에이전트")
-st.markdown("입력된 제원을 바탕으로 보완 사항을 예측하고, 안전기준에 근거한 공학적 대화를 지원합니다.")
+st.markdown('<div class="hero-title">🛗 승강기 설계심사 전문 에이전트</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="hero-sub">입력된 제원을 바탕으로 보완 사항을 예측하고, '
+    '안전기준에 근거한 공학적 대화를 지원합니다.</div>',
+    unsafe_allow_html=True,
+)
 
 # =====================================================================
-# 2. PDF 규정/가이드라인 자동 학습 (문제가 있을 때만 알림 표시)
+# 2. PDF 기준 문서 학습 (문제가 있을 때만 알림 표시)
 # =====================================================================
 @st.cache_data(show_spinner=False)
 def load_pdf_knowledge():
@@ -41,7 +70,7 @@ def load_pdf_knowledge():
     return extracted_text
 
 if "pdf_context" not in st.session_state:
-    with st.spinner("승강기 안전기준과 설계 가이드를 백그라운드에서 학습 중입니다..."):
+    with st.spinner("승강기 안전기준과 설계 가이드를 학습 중입니다..."):
         try:
             st.session_state.pdf_context = load_pdf_knowledge()
             st.session_state.pdf_error = None
@@ -51,9 +80,8 @@ if "pdf_context" not in st.session_state:
             st.session_state.pdf_context = ""
             st.session_state.pdf_error = f"기준 문서 학습 중 오류가 발생했습니다: {e}"
 
-# 문제가 있을 때만 표시
 if st.session_state.get("pdf_error"):
-    st.sidebar.error(f"📚 {st.session_state.pdf_error}")
+    st.sidebar.error(st.session_state.pdf_error)
 
 # =====================================================================
 # 3. 데이터 로드
@@ -72,10 +100,8 @@ df = load_data()
 # =====================================================================
 # 4. 입력 항목 정의
 # =====================================================================
-# 사이드바 상단에 올리는 항목 (순서 중요)
 TOP_FIELDS = ['안전인증유형', '승강기종류', '구분1']
 
-# 숫자로 직접 입력받는 항목
 NUMERIC_COLS = [
     '구동기 용량 [kW]', '정격하중 [kg]', '견인하중 [kg]', '정원 [인승]', '정격속도 [m/s]',
     '최대 운행거리 [m]', '매다는 장치 직경 [mm, (호)]', '매다는 장치 [가닥]', '주 도르래 직경 [mm]',
@@ -87,8 +113,8 @@ NUMERIC_COLS = [
     '균형추/평형추 주행안내 레일 브라켓 최대간격 [mm]',
 ]
 
-# 기본 정보 중 상단으로 올리지 않은 나머지
-BASIC_REST = ['신청자명', '제조업체', '업체구분', '모델명', '현장명', '심사원']
+# 기본 정보 중 상단으로 올리지 않은 나머지 (현장명 제외)
+BASIC_REST = ['신청자명', '제조업체', '업체구분', '모델명', '심사원']
 
 # ---- 일반형 ----
 DRIVE_GEN = ['구동기 모델', '구동기 용량 [kW]', '브레이크 모델', '정격하중 [kg]', '견인하중 [kg]',
@@ -166,21 +192,15 @@ LAYOUTS = {
 # =====================================================================
 @st.cache_data
 def cat_options_all(col):
-    """승강기종류, 구분1 등 상단 항목은 전체 데이터 기준으로 선택지를 만듭니다."""
     return sorted(df[col].dropna().astype(str).unique().tolist())
 
 @st.cache_data
 def cat_options(gubun, col):
-    """구분2 유형별 데이터 기준으로 선택지를 만듭니다."""
     sub = df[df["구분2"].astype(str) == gubun]
     return sorted(sub[col].dropna().astype(str).unique().tolist())
 
 def parse_num(text):
-    """
-    입력한 문자열을 그대로 존중해서 숫자로 변환합니다.
-    반환: (정상 여부, 값). 비어 있으면 (True, None).
-    None이 들어와도 빈 문자열로 처리합니다.
-    """
+    """입력값을 그대로 존중해 숫자로 변환. 반환: (정상 여부, 값). 비어 있으면 (True, None)."""
     t = (text or "").strip().replace(",", "")
     if t == "":
         return True, None
@@ -192,37 +212,38 @@ def parse_num(text):
 # =====================================================================
 # 6. 사이드바
 # =====================================================================
-st.sidebar.header("📋 세부 제원 입력")
-
-# (1) 예측 분석 버튼: 가장 상단에 자리를 먼저 확보
+# (1) 예측 분석 버튼: 세부 제원 제목보다 위
 btn_slot = st.sidebar.container()
-st.sidebar.caption("'선택 안 함'은 조건에서 제외됩니다. 숫자 항목은 입력한 값 그대로 사용되며, 비워 두면 제외됩니다.")
+
+# (2) 제목 및 안내
+st.sidebar.markdown('<div class="side-title">📋 세부 제원 입력</div>', unsafe_allow_html=True)
+st.sidebar.markdown(
+    '<div class="side-note">\'선택 안 함\'은 조건에서 제외됩니다. '
+    '숫자 항목은 입력한 값 그대로 사용되며, 비워 두면 제외됩니다.</div>',
+    unsafe_allow_html=True,
+)
 
 user_inputs = {}
 
-# (2) 최상단 고정 항목: 안전인증유형 → 승강기종류 → 구분1 → 구분2
+# (3) 최상단 고정 항목: 안전인증유형 → 승강기종류 → 구분1 → 구분2
 for col in TOP_FIELDS:
     choice = st.sidebar.selectbox(col, ["선택 안 함"] + cat_options_all(col), key=f"top|{col}")
     user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
 
 gubun = st.sidebar.selectbox("구분2 (승강기 유형)", TYPES, index=0, key="gubun")
 
-# (3) 나머지 기본 정보
-with st.sidebar.expander(f"기본 정보 ({len(BASIC_REST)})", expanded=True):
+# (4) 기본 정보: 처음에는 접힌 상태
+with st.sidebar.expander(f"기본 정보 ({len(BASIC_REST)})", expanded=False):
     for col in BASIC_REST:
         choice = st.selectbox(col, ["선택 안 함"] + cat_options(gubun, col), key=f"cat|{gubun}|{col}")
         user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
 
-# (4) 유형별 그룹
+# (5) 유형별 그룹
 for group_name, cols in LAYOUTS[gubun]:
     with st.sidebar.expander(f"{group_name} ({len(cols)})", expanded=False):
         for col in cols:
             if col in NUMERIC_COLS:
-                raw = st.text_input(
-                    col,
-                    key=f"txt|{gubun}|{col}",
-                    placeholder="숫자 입력 (비우면 제외)",
-                )
+                raw = st.text_input(col, key=f"txt|{gubun}|{col}", placeholder="숫자 입력 (비우면 제외)")
                 ok, num = parse_num(raw)
                 if not ok:
                     st.warning(f"'{col}': 숫자만 입력해 주세요.")
@@ -231,8 +252,8 @@ for group_name, cols in LAYOUTS[gubun]:
                 choice = st.selectbox(col, ["선택 안 함"] + cat_options(gubun, col), key=f"cat|{gubun}|{col}")
                 user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
 
-# 버튼은 위에서 만든 자리에 그려지므로 화면 최상단에 나타납니다
-run = btn_slot.button("예측 분석 실행", type="primary", use_container_width=True)
+# 버튼은 가장 위 자리에 그려짐
+run = btn_slot.button("🔍 예측 분석 실행", type="primary", use_container_width=True)
 
 # =====================================================================
 # 7. 연관도 계산 및 부적합 예측
@@ -253,10 +274,8 @@ if run:
 
         for col, (kind, val) in active.items():
             if kind == "cat":
-                # 범주형: 정확히 일치하면 1점
                 result_df.loc[result_df[col].astype(str) == val, '유사도 점수'] += 1
             else:
-                # 숫자형: 입력값과 가까울수록 1점에 가깝게 (범위 기준 정규화)
                 vals = pd.to_numeric(result_df[col], errors='coerce')
                 rng = vals.max() - vals.min()
                 if pd.isna(rng) or rng == 0:
@@ -265,7 +284,13 @@ if run:
                 result_df['유사도 점수'] += closeness.fillna(0)
 
         top_matches = result_df.sort_values(by='유사도 점수', ascending=False).head(TOP_N)
-        st.caption(f"'{gubun}' 데이터 {len(base):,}건 중 연관도 상위 {len(top_matches)}건으로 분석했습니다.")
+
+        st.session_state.match_summary = {
+            "base": len(base),
+            "top": len(top_matches),
+            "active": len(active),
+            "gubun": gubun,
+        }
 
         issues = top_matches['부적합내용'].dropna().tolist()
         ignore_keywords = ["안내사항", "개별인증 신청 시 기술원 홈페이지", "인증 신청 시 작성하는", "최신 설계심사 목록표를 참조하여"]
@@ -309,17 +334,28 @@ if run:
             st.session_state.pop("recommended_questions", None)
             st.info("연관 데이터는 있으나 분석할 부적합 내용이 없습니다.")
 
-# 분석 결과 출력 (세션 저장값 사용 - 추천 질문 버튼을 눌러도 유지)
+# 분석 결과 출력
 if "analysis_result" in st.session_state:
-    st.subheader("🧠 예상 주요 부적합 사항 (의미 기반 분석)")
-    st.markdown("### ⚠️ 주의: 내용이 모호하거나 확실하지 않은 경우, 반드시 관련 안전기준 원문 항목을 직접 확인하시기 바랍니다.")
-    st.markdown(st.session_state.analysis_result)
+    summary = st.session_state.get("match_summary")
+
+    with st.container(border=True):
+        st.subheader("🧠 예상 주요 부적합 사항")
+
+        if summary:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("유형", summary["gubun"])
+            c2.metric("분석 대상", f"{summary['top']:,}건")
+            c3.metric("입력 항목", f"{summary['active']}개")
+            st.caption(f"전체 {summary['base']:,}건 중 입력 조건과 가장 가까운 {summary['top']:,}건을 분석했습니다.")
+
+        st.warning("내용이 모호하거나 확실하지 않은 경우, 반드시 관련 안전기준 원문 항목을 직접 확인하시기 바랍니다.")
+        st.markdown(st.session_state.analysis_result)
 
     if st.session_state.get("recommended_questions"):
-        st.markdown("💡 **관련 추천 질문 (클릭 시 자동 질문)**")
-        cols = st.columns(len(st.session_state.recommended_questions))
+        st.markdown("##### 💡 관련 추천 질문")
+        q_cols = st.columns(len(st.session_state.recommended_questions))
         for i, q in enumerate(st.session_state.recommended_questions):
-            if cols[i].button(q, key=f"rq_{i}"):
+            if q_cols[i].button(q, key=f"rq_{i}", use_container_width=True):
                 st.session_state.messages.append({"role": "user", "content": q})
                 st.session_state.submit_from_button = True
                 st.rerun()
@@ -329,10 +365,11 @@ st.divider()
 # =====================================================================
 # 8. 대화형 어시스턴트
 # =====================================================================
-st.subheader("💬 설계심사 규정 및 공학 추론 어시스턴트")
+st.subheader("💬 규정 및 공학 추론 어시스턴트")
+st.caption("기준 문서와 공학 지식을 바탕으로 질문에 답변합니다.")
 
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
+    with st.chat_message(message["role"], avatar="🧑‍💼" if message["role"] == "user" else "🛗"):
         st.markdown(message["content"])
 
 prompt = st.chat_input("질문을 입력하세요. (예: 매다는 장치 안전율 계산 관련 안전기준을 알려줘)")
@@ -347,10 +384,10 @@ elif st.session_state.submit_from_button:
 
 if trigger:
     latest_user_msg = st.session_state.messages[-1]["content"]
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar="🧑‍💼"):
         st.markdown(latest_user_msg)
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar="🛗"):
         with st.spinner("규정 문서를 탐색하고 공학적 추론을 진행 중입니다..."):
             system_prompt = f"""
             당신은 한국 승강기안전공단의 설계심사 최고 권위자이자 기계공학 전문가입니다.
