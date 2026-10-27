@@ -1,8 +1,11 @@
 import os
+import re
+import time
 import streamlit as st
 import pandas as pd
 import google.generativeai as genai
 import PyPDF2
+from google.api_core import exceptions as gexc
 
 # =====================================================================
 # 1. 기본 설정
@@ -14,7 +17,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# 전체 디자인 (카드형 섹션, 여백, 버튼 스타일)
 st.markdown("""
 <style>
     .block-container { padding-top: 2.2rem; padding-bottom: 3rem; }
@@ -22,7 +24,6 @@ st.markdown("""
     .hero-sub { font-size: 0.98rem; opacity: 0.75; margin-bottom: 1.2rem; }
     .side-title { font-size: 1.15rem; font-weight: 800; margin: 0.2rem 0 0.6rem 0; }
     .side-note { font-size: 0.78rem; opacity: 0.7; line-height: 1.5; margin: 0.4rem 0 0.8rem 0; }
-    .section-label { font-size: 0.85rem; font-weight: 700; opacity: 0.8; margin-top: 0.6rem; }
     div[data-testid="stExpander"] { border-radius: 12px; }
     div[data-testid="stExpander"] summary p { font-weight: 700; }
     button[kind="primary"] { border-radius: 10px; font-weight: 700; height: 2.8rem; }
@@ -53,35 +54,47 @@ st.markdown(
 )
 
 # =====================================================================
-# 2. PDF 기준 문서 학습 (문제가 있을 때만 알림 표시)
+# 2. 기준 문서(PDF) 로드 및 조각내기
 # =====================================================================
-@st.cache_data(show_spinner=False)
-def load_pdf_knowledge():
-    folder_path = "."
-    extracted_text = ""
-    for file_name in os.listdir(folder_path):
-        if file_name.endswith(".pdf"):
-            file_path = os.path.join(folder_path, file_name)
-            reader = PyPDF2.PdfReader(file_path)
+@st.cache_resource(show_spinner=False)
+def load_pdf_chunks():
+    texts = []
+    for f in os.listdir("."):
+        if f.lower().endswith(".pdf"):
+            reader = PyPDF2.PdfReader(f)
             for page in reader.pages:
-                text = page.extract_text()
-                if text:
-                    extracted_text += text + "\n"
-    return extracted_text
+                texts.append(page.extract_text() or "")
+    full = "\n".join(texts)
+    # 1200자 조각, 200자씩 겹치게 나눔
+    chunks = [full[i:i + 1200] for i in range(0, len(full), 1000)]
+    return [c for c in chunks if c.strip()]
 
-if "pdf_context" not in st.session_state:
-    with st.spinner("승강기 안전기준과 설계 가이드를 학습 중입니다..."):
-        try:
-            st.session_state.pdf_context = load_pdf_knowledge()
-            st.session_state.pdf_error = None
-            if not st.session_state.pdf_context.strip():
-                st.session_state.pdf_error = "기준 문서(PDF)에서 읽어 온 내용이 없습니다. 파일 위치를 확인해 주세요."
-        except Exception as e:
-            st.session_state.pdf_context = ""
-            st.session_state.pdf_error = f"기준 문서 학습 중 오류가 발생했습니다: {e}"
+pdf_error = None
+try:
+    PDF_CHUNKS = load_pdf_chunks()
+    if not PDF_CHUNKS:
+        pdf_error = "기준 문서(PDF)를 찾지 못했거나 내용이 비어 있습니다. 파일 위치를 확인해 주세요."
+except Exception as e:
+    PDF_CHUNKS = []
+    pdf_error = f"기준 문서 학습 중 오류가 발생했습니다: {e}"
 
-if st.session_state.get("pdf_error"):
-    st.sidebar.error(st.session_state.pdf_error)
+if pdf_error:
+    st.sidebar.error(pdf_error)
+
+def retrieve_chunks(query, chunks, k=5):
+    """질문과 글자 2개 조합(bigram)이 많이 겹치는 조각 k개를 고릅니다. 한글 조사에도 어느 정도 대응합니다."""
+    tokens = re.findall(r"[가-힣A-Za-z0-9\.]+", query)
+    grams = set()
+    for t in tokens:
+        for i in range(len(t) - 1):
+            grams.add(t[i:i + 2])
+    scored = []
+    for ch in chunks:
+        s = sum(1 for g in grams if g in ch)
+        scored.append((s, ch))
+    scored.sort(key=lambda x: -x[0])
+    picked = [c for s, c in scored[:k] if s > 0]
+    return picked or chunks[:2]
 
 # =====================================================================
 # 3. 데이터 로드
@@ -113,10 +126,8 @@ NUMERIC_COLS = [
     '균형추/평형추 주행안내 레일 브라켓 최대간격 [mm]',
 ]
 
-# 기본 정보 중 상단으로 올리지 않은 나머지 (현장명 제외)
 BASIC_REST = ['신청자명', '제조업체', '업체구분', '모델명', '심사원']
 
-# ---- 일반형 ----
 DRIVE_GEN = ['구동기 모델', '구동기 용량 [kW]', '브레이크 모델', '정격하중 [kg]', '견인하중 [kg]',
              '정원 [인승]', '정격속도 [m/s]', '최대 운행거리 [m]', '매다는 장치 [종류]',
              '매다는 장치 직경 [mm, (호)]', '매다는 장치 [가닥]', '보상수단 [종류] (선택사양)',
@@ -137,7 +148,6 @@ HOIST_GEN = ['구동기 지지대 규격  [mm]', '오버밸런스율 [%]', '균�
              '카 주행안내 레일 규격 [K, (T)]', '균형추/평형추 주행안내 레일 규격  [K, (T)]',
              '카 주행안내 레일 브라켓 최대간격 [mm]', '균형추/평형추 주행안내 레일 브라켓 최대간격 [mm]']
 
-# ---- 전기식 소형화물용 ----
 DRIVE_SMALL = ['구동기 모델', '구동기 용량 [kW]', '브레이크 모델', '정격하중 [kg]', '견인하중 [kg]',
                '정격속도 [m/s]', '최대 운행거리 [m]', '매다는 장치 [종류]', '매다는 장치 직경 [mm, (호)]',
                '매다는 장치 [가닥]', '로핑방식', '로핑 구조', '주 도르래 직경 [mm]', '권부각도 α [ º ]',
@@ -147,7 +157,6 @@ CTRL_SMALL = ['제어반 모델', '주 전원 [V]', '카 조명 전원 [V]', '�
               '개문 재착상 운전 (선택사양)', '주제어 기판', 'UCMP 감지부 모델', 'UCMP 제어부 모델',
               'UCMP 정지부 모델', '안전회로기판 모델', '비상 운전방식']
 
-# ---- 경사형 ----
 DRIVE_SLOPE = ['구동기 모델', '구동기 용량 [kW]', '브레이크 모델', '정격하중 [kg]', '견인하중 [kg]',
                '정원 [인승]', '최대 경사각도 [ º ]', '정격속도 [m/s]', '최대 운행거리 [m]',
                '매다는 장치 [종류]', '매다는 장치 직경 [mm, (호)]', '매다는 장치 [가닥]',
@@ -200,7 +209,6 @@ def cat_options(gubun, col):
     return sorted(sub[col].dropna().astype(str).unique().tolist())
 
 def parse_num(text):
-    """입력값을 그대로 존중해 숫자로 변환. 반환: (정상 여부, 값). 비어 있으면 (True, None)."""
     t = (text or "").strip().replace(",", "")
     if t == "":
         return True, None
@@ -212,10 +220,8 @@ def parse_num(text):
 # =====================================================================
 # 6. 사이드바
 # =====================================================================
-# (1) 예측 분석 버튼: 세부 제원 제목보다 위
 btn_slot = st.sidebar.container()
 
-# (2) 제목 및 안내
 st.sidebar.markdown('<div class="side-title">📋 세부 제원 입력</div>', unsafe_allow_html=True)
 st.sidebar.markdown(
     '<div class="side-note">\'선택 안 함\'은 조건에서 제외됩니다. '
@@ -225,20 +231,17 @@ st.sidebar.markdown(
 
 user_inputs = {}
 
-# (3) 최상단 고정 항목: 안전인증유형 → 승강기종류 → 구분1 → 구분2
 for col in TOP_FIELDS:
     choice = st.sidebar.selectbox(col, ["선택 안 함"] + cat_options_all(col), key=f"top|{col}")
     user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
 
 gubun = st.sidebar.selectbox("구분2 (승강기 유형)", TYPES, index=0, key="gubun")
 
-# (4) 기본 정보: 처음에는 접힌 상태
 with st.sidebar.expander(f"기본 정보 ({len(BASIC_REST)})", expanded=False):
     for col in BASIC_REST:
         choice = st.selectbox(col, ["선택 안 함"] + cat_options(gubun, col), key=f"cat|{gubun}|{col}")
         user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
 
-# (5) 유형별 그룹
 for group_name, cols in LAYOUTS[gubun]:
     with st.sidebar.expander(f"{group_name} ({len(cols)})", expanded=False):
         for col in cols:
@@ -252,104 +255,173 @@ for group_name, cols in LAYOUTS[gubun]:
                 choice = st.selectbox(col, ["선택 안 함"] + cat_options(gubun, col), key=f"cat|{gubun}|{col}")
                 user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
 
-# 버튼은 가장 위 자리에 그려짐
 run = btn_slot.button("🔍 예측 분석 실행", type="primary", use_container_width=True)
 
 # =====================================================================
 # 7. 연관도 계산 및 부적합 예측
 # =====================================================================
-TOP_N = 200
+SAMPLE_N = 500        # 연관도 상위 몇 건을 집계 표본으로 쓸지 (계산만 하므로 가벼움)
+LLM_TOP_K = 50        # AI에 보낼 빈도 상위 개수
+IGNORE_KEYWORDS = ["안내사항", "개별인증 신청 시 기술원 홈페이지", "인증 신청 시 작성하는", "최신 설계심사 목록표를 참조하여"]
+
+def normalize_text(s):
+    """띄어쓰기, 공백, 특수문자 차이를 무시해 같은 뜻의 문장을 같은 키로 만듭니다."""
+    s = str(s).strip()
+    s = re.sub(r"\s+", "", s)
+    s = re.sub(r"[^\w가-힣]", "", s)
+    return s.lower()
+
+@st.cache_data(show_spinner=False)
+def find_matches(gubun, active_items):
+    base = df[df["구분2"].astype(str) == gubun]
+    score = pd.Series(0.0, index=base.index)
+
+    for col, kind, val in active_items:
+        if kind == "cat":
+            score += (base[col].astype(str) == val).astype(float)
+        else:
+            vals = pd.to_numeric(base[col], errors="coerce")
+            rng = vals.max() - vals.min()
+            if pd.isna(rng) or rng == 0:
+                rng = 1.0
+            score += (1 - ((vals - val).abs() / rng).clip(0, 1)).fillna(0)
+
+    tmp = pd.DataFrame({"부적합내용": base["부적합내용"], "유사도 점수": score})
+    top = tmp.nlargest(SAMPLE_N, "유사도 점수")
+    return len(base), top
+
+def summarize_issues(top):
+    """정규화 키로 묶어서 빈도를 셉니다. 보여줄 문장은 가장 많이 나온 원문을 씁니다."""
+    texts = top["부적합내용"].dropna().astype(str)
+    texts = texts[~texts.apply(lambda x: any(k in x for k in IGNORE_KEYWORDS))]
+    if texts.empty:
+        return pd.Series(dtype=int)
+
+    keys = texts.apply(normalize_text)
+    counts = keys.value_counts()
+    rep = {}
+    for k, original in zip(keys, texts):
+        rep.setdefault(k, {})
+        rep[k][original] = rep[k].get(original, 0) + 1
+
+    out = pd.Series(
+        {max(rep[k], key=rep[k].get): int(counts[k]) for k in counts.index}
+    )
+    return out.sort_values(ascending=False)
+
+def call_gemini(prompt, max_tokens=1500):
+    """한도 초과(429)면 한 번 기다렸다가 재시도합니다."""
+    config = {"max_output_tokens": max_tokens, "temperature": 0.2}
+    try:
+        return model.generate_content(prompt, generation_config=config).text
+    except gexc.ResourceExhausted:
+        time.sleep(15)
+        return model.generate_content(prompt, generation_config=config).text
+
+@st.cache_data(show_spinner=False)
+def llm_analysis(issue_items):
+    lines = "\n".join(f"- ({cnt}건) {txt[:300]}" for txt, cnt in issue_items)
+    prompt = f"""
+    다음은 승강기 설계심사에서 입력 조건과 유사한 사례에서 자주 나온 부적합 사항을 빈도순으로 정리한 목록입니다.
+    괄호 안 숫자는 실제 발생 건수입니다.
+
+    억지로 개수를 맞추지 말고, 의미 있게 반복되는 주요 부적합 유형만 골라 아래 형식을 지켜 작성해 주세요.
+    업체 고유의 내용이나 불확실한 부분은 과도하게 해석하지 말고 2~3문장 이내로 요약하세요.
+    안전기준 조항은 대분류(예: 6항)가 아닌 세부 조항(예: 6.1.2항, 8.3.2.1항)까지 최대한 구체적으로 적어 주세요.
+
+    ### [안전기준 세부 조항 번호 및 제목] 핵심 부적합 사유
+    * **부적합 내용**: (객관적 요약 2~3문장)
+    * **유사 발생 건수**: 약 O건 (위 목록의 건수를 그대로 사용)
+    * **엔지니어링 조언**: (설계 시 확인해야 할 조언)
+
+    모든 내용이 끝난 후 마지막 줄에 아래 형식으로 추천 질문 3개를 적어 주세요.
+    [추천질문] (분석된 내용의 구체적 원인, 계산식, 규정 세부 내용을 묻는 질문)
+    [추천질문] (질문 2)
+    [추천질문] (질문 3)
+
+    부적합 목록:
+    {lines}
+    """
+    text = call_gemini(prompt, max_tokens=1500)
+
+    main_content, questions = [], []
+    for line in text.split("\n"):
+        if line.startswith("[추천질문]"):
+            questions.append(line.replace("[추천질문]", "").strip())
+        else:
+            main_content.append(line)
+    return "\n".join(main_content), questions
 
 if run:
     active = {c: v for c, v in user_inputs.items() if v is not None}
-    base = df[df["구분2"].astype(str) == gubun]
 
     if not active:
+        st.session_state.pop("result", None)
         st.warning("제원을 하나 이상 선택하거나 입력해 주세요.")
-    elif base.empty:
-        st.warning(f"'{gubun}' 유형의 과거 데이터가 없습니다.")
     else:
-        result_df = base.copy()
-        result_df['유사도 점수'] = 0.0
+        active_items = tuple(sorted(((c, k, v) for c, (k, v) in active.items()), key=lambda x: x[0]))
 
-        for col, (kind, val) in active.items():
-            if kind == "cat":
-                result_df.loc[result_df[col].astype(str) == val, '유사도 점수'] += 1
-            else:
-                vals = pd.to_numeric(result_df[col], errors='coerce')
-                rng = vals.max() - vals.min()
-                if pd.isna(rng) or rng == 0:
-                    rng = 1.0
-                closeness = 1 - ((vals - val).abs() / rng).clip(0, 1)
-                result_df['유사도 점수'] += closeness.fillna(0)
+        with st.spinner("유사 사례를 찾는 중..."):
+            base_n, top = find_matches(gubun, active_items)
 
-        top_matches = result_df.sort_values(by='유사도 점수', ascending=False).head(TOP_N)
+        counts = summarize_issues(top)
 
-        st.session_state.match_summary = {
-            "base": len(base),
-            "top": len(top_matches),
-            "active": len(active),
+        st.session_state.result = {
             "gubun": gubun,
+            "base_n": base_n,
+            "top_n": len(top),
+            "active_n": len(active),
+            "counts": counts,
         }
+        st.session_state.pop("analysis_result", None)
+        st.session_state.pop("recommended_questions", None)
+        st.session_state.pop("analysis_error", None)
 
-        issues = top_matches['부적합내용'].dropna().tolist()
-        ignore_keywords = ["안내사항", "개별인증 신청 시 기술원 홈페이지", "인증 신청 시 작성하는", "최신 설계심사 목록표를 참조하여"]
-        filtered_issues = [str(i) for i in issues if not any(k in str(i) for k in ignore_keywords)]
+        if len(counts) > 0:
+            items = tuple((t, int(c)) for t, c in counts.head(LLM_TOP_K).items())
+            try:
+                with st.spinner("핵심 기준 위주로 정리하는 중..."):
+                    main_text, questions = llm_analysis(items)
+                st.session_state.analysis_result = main_text
+                st.session_state.recommended_questions = questions
+            except gexc.ResourceExhausted:
+                st.session_state.analysis_error = (
+                    "AI 사용량 한도에 도달했습니다. 빈도표는 아래에서 바로 확인할 수 있고, "
+                    "AI 요약은 잠시 후 다시 시도해 주세요."
+                )
+            except Exception as e:
+                st.session_state.analysis_error = f"AI 요약 중 오류가 발생했습니다: {e}"
 
-        if filtered_issues:
-            with st.spinner("사례를 분석하여 핵심 기준 위주로 정리하고 있습니다..."):
-                grouping_prompt = f"""
-                다음은 승강기 설계심사에서 발생한 부적합 사항 리스트입니다.
-
-                억지로 개수를 맞추지 말고, 데이터에서 유의미하게 반복되는 주요 부적합 유형들만 추출하여 아래 형식을 엄격히 지켜 작성해 주세요.
-                업체 고유의 내용이나 심사자만 아는 불확실한 부분은 과도하게 해석하지 말고 객관적으로 2~3문장 이내로만 요약하세요.
-
-                중요: 안전기준 조항은 대분류(예: 6항, 9항)가 아닌, 부적합 내용과 직접적으로 매칭되는 세부 조항(예: 6.1.2항, 8.3.2.1항)까지 최대한 구체적으로 파악하여 기재해 주세요.
-
-                ### [안전기준 세부 조항 번호 및 제목] 핵심 부적합 사유
-                * **부적합 내용**: (객관적 요약 2~3문장)
-                * **유사 발생 건수 예측**: 약 O건
-                * **엔지니어링 조언**: (설계 시 확인해야 할 조언)
-
-                위 분석 내용이 모두 끝난 후, 맨 마지막 줄에 반드시 '위에서 분석된 예상 부적합 사항'을 기반으로 사용자가 챗봇에 이어서 물어볼 만한 심층적인 '추천 질문' 딱 3개를 다음 형식으로만 적어주세요.
-                [추천질문] (분석된 주요 부적합 사항의 구체적 원인이나 계산식, 규정 세부 내용을 묻는 질문)
-                [추천질문] (분석된 내용 관련 질문 2)
-                [추천질문] (분석된 내용 관련 질문 3)
-
-                부적합 데이터: {filtered_issues[:200]}
-                """
-                response = model.generate_content(grouping_prompt)
-
-                main_content, recommended_questions = [], []
-                for line in response.text.split('\n'):
-                    if line.startswith('[추천질문]'):
-                        recommended_questions.append(line.replace('[추천질문]', '').strip())
-                    else:
-                        main_content.append(line)
-
-                st.session_state.analysis_result = '\n'.join(main_content)
-                st.session_state.recommended_questions = recommended_questions
-        else:
-            st.session_state.pop("analysis_result", None)
-            st.session_state.pop("recommended_questions", None)
-            st.info("연관 데이터는 있으나 분석할 부적합 내용이 없습니다.")
-
-# 분석 결과 출력
-if "analysis_result" in st.session_state:
-    summary = st.session_state.get("match_summary")
+if "result" in st.session_state:
+    r = st.session_state.result
 
     with st.container(border=True):
         st.subheader("🧠 예상 주요 부적합 사항")
 
-        if summary:
-            c1, c2, c3 = st.columns(3)
-            c1.metric("유형", summary["gubun"])
-            c2.metric("분석 대상", f"{summary['top']:,}건")
-            c3.metric("입력 항목", f"{summary['active']}개")
-            st.caption(f"전체 {summary['base']:,}건 중 입력 조건과 가장 가까운 {summary['top']:,}건을 분석했습니다.")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("유형", r["gubun"])
+        c2.metric("분석 대상", f"{r['top_n']:,}건")
+        c3.metric("입력 항목", f"{r['active_n']}개")
+        st.caption(f"전체 {r['base_n']:,}건 중 입력 조건과 가장 가까운 {r['top_n']:,}건을 집계했습니다.")
+
+        counts = r["counts"]
+        if len(counts) > 0:
+            st.markdown("**빈도 상위 부적합 내용**")
+            st.dataframe(
+                pd.DataFrame({"부적합 내용": counts.index, "건수": counts.values}).head(30),
+                hide_index=True,
+                use_container_width=True,
+            )
+        else:
+            st.info("연관 사례는 있으나 분석할 부적합 내용이 없습니다.")
 
         st.warning("내용이 모호하거나 확실하지 않은 경우, 반드시 관련 안전기준 원문 항목을 직접 확인하시기 바랍니다.")
-        st.markdown(st.session_state.analysis_result)
+
+        if st.session_state.get("analysis_error"):
+            st.error(st.session_state.analysis_error)
+        elif st.session_state.get("analysis_result"):
+            st.markdown("**AI 요약**")
+            st.markdown(st.session_state.analysis_result)
 
     if st.session_state.get("recommended_questions"):
         st.markdown("##### 💡 관련 추천 질문")
@@ -366,17 +438,17 @@ st.divider()
 # 8. 대화형 어시스턴트
 # =====================================================================
 st.subheader("💬 규정 및 공학 추론 어시스턴트")
-st.caption("기준 문서와 공학 지식을 바탕으로 질문에 답변합니다.")
+st.caption("질문과 관련된 기준 문서 부분을 골라 답변합니다.")
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar="🧑‍💼" if message["role"] == "user" else "🛗"):
         st.markdown(message["content"])
 
-prompt = st.chat_input("질문을 입력하세요. (예: 매다는 장치 안전율 계산 관련 안전기준을 알려줘)")
+prompt_input = st.chat_input("질문을 입력하세요. (예: 매다는 장치 안전율 계산 관련 안전기준을 알려줘)")
 trigger = False
 
-if prompt:
-    st.session_state.messages.append({"role": "user", "content": prompt})
+if prompt_input:
+    st.session_state.messages.append({"role": "user", "content": prompt_input})
     trigger = True
 elif st.session_state.submit_from_button:
     trigger = True
@@ -388,20 +460,25 @@ if trigger:
         st.markdown(latest_user_msg)
 
     with st.chat_message("assistant", avatar="🛗"):
-        with st.spinner("규정 문서를 탐색하고 공학적 추론을 진행 중입니다..."):
+        with st.spinner("관련 기준을 찾고 답변을 준비하는 중..."):
+            related = "\n\n".join(retrieve_chunks(latest_user_msg, PDF_CHUNKS, k=5))
             system_prompt = f"""
             당신은 한국 승강기안전공단의 설계심사 최고 권위자이자 기계공학 전문가입니다.
-            사용자의 질문에 대해 철저히 기계공학적 배경지식과, 제공된 [참고 기준 문서]에 근거하여 전문가적인 어조로 상세히 답변하세요.
-            문서에 없는 공학적 계산(예: 오일러 좌굴 하중 등)을 물어보면 당신의 물리/기계공학 지식을 활용하여 수식과 함께 설명하세요.
-
-            추가 지시사항:
-            답변 시 출처를 명시할 때 파싱 과정에서 오차가 발생할 수 있는 '페이지 번호(예: p.24 등)'를 언급하는 것을 최대한 지양하고, 대신 문서 내의 명확한 '조항 번호(예: 6.1.8.1 등)'나 '항목 제목'을 기준으로 근거를 명시하십시오.
+            사용자의 질문에 대해 기계공학적 배경지식과, 아래 [참고 기준 문서]에 근거하여 전문가적인 어조로 답변하세요.
+            문서에 없는 공학적 계산(예: 오일러 좌굴 하중 등)은 물리/기계공학 지식을 활용해 수식과 함께 설명하세요.
+            출처는 페이지 번호 대신 문서 내 조항 번호나 항목 제목으로 명시하십시오.
+            문서에서 근거를 찾을 수 없으면 그렇다고 말하고, 일반 공학 지식으로 답하고 있음을 밝히세요.
 
             [참고 기준 문서 내용]
-            {st.session_state.pdf_context}
+            {related}
 
             사용자 질문: {latest_user_msg}
             """
-            chat_response = model.generate_content(system_prompt)
-            st.markdown(chat_response.text)
-            st.session_state.messages.append({"role": "assistant", "content": chat_response.text})
+            try:
+                answer = call_gemini(system_prompt, max_tokens=2000)
+                st.markdown(answer)
+                st.session_state.messages.append({"role": "assistant", "content": answer})
+            except gexc.ResourceExhausted:
+                st.error("AI 사용량 한도에 도달했습니다. 잠시 후 다시 질문해 주세요.")
+            except Exception as e:
+                st.error(f"답변 생성 중 오류가 발생했습니다: {e}")
