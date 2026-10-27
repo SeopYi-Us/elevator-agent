@@ -121,7 +121,7 @@ st.markdown(
     '<div class="kh-topbar"></div>'
     '<div class="kh-header">' + logo_tag +
     '<div><div class="kh-title">승강기 설계심사 에이전트</div>'
-    '<div class="kh-sub">한국승강기안전공단 · 설계심사 부적합 사항 예측 및 안전 기준 질의</div></div></div>',
+    '<div class="kh-sub">승강기안전기술원 설계심사 부적합 사항 예측 및 안전 기준 질의</div></div></div>',
     unsafe_allow_html=True,
 )
 
@@ -132,8 +132,8 @@ st.markdown(
     '<div class="kh-hero">' + hello_frame +
     '<div><span class="kh-chip">AI 설계심사 도우미</span>'
     '<h2>입력한 제원으로 부적합 사항을 미리 확인하세요</h2>'
-    '<p>왼쪽에서 승강기 유형과 제원을 고르고 <b>예측 분석 실행</b>을 누르면, '
-    '과거 개별인증 사례에서 비슷하게 나온 부적합 사항을 정리해 드립니다.</p></div></div>',
+    '<p>좌측에서 세부제원 선택 후 <b>예측 분석 실행</b>을 누르면, '
+    '과거 개별인증 사례에서 유사하게 나온 부적합 사항을 정리해 드립니다.</p></div></div>',
     unsafe_allow_html=True,
 )
 
@@ -390,7 +390,7 @@ def llm_analysis(issues_tuple):
     다음은 승강기 설계심사에서 입력 조건과 유사한 과거 개별인증 사례의 부적합 사항 목록입니다.
 
     목록에는 같은 내용을 다르게 표현한 문장이 많이 섞여 있습니다.
-    의미가 비슷한 부적합 사항끼리 스스로 묶어서, 실제로 자주 반복되는 주요 부적합 유형만 골라 정리해 주세요.
+    의미가 유사한 부적합 사항끼리 스스로 묶어서, 실제로 자주 반복되는 주요 부적합 유형만 골라 정리해 주세요.
     억지로 개수를 맞추지 말고, 업체 고유의 내용이나 불확실한 부분은 과도하게 해석하지 마세요.
     안전기준 조항은 대분류(예: 6항)가 아닌 세부 조항(예: 6.1.2항, 8.3.2.1항)까지 최대한 구체적으로 적어 주세요.
 
@@ -446,7 +446,7 @@ if run:
 
         if issues_tuple:
             try:
-                with st.spinner("비슷한 부적합 사항을 묶어 정리하는 중..."):
+                with st.spinner("유사한 부적합 사항을 묶어 정리하는 중..."):
                     main_text, questions = llm_analysis(issues_tuple)
                 st.session_state.analysis_result = main_text
                 st.session_state.recommended_questions = questions
@@ -493,8 +493,8 @@ st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 # =====================================================================
 # 10. 질의응답
 # =====================================================================
-st.markdown('<div class="kh-pill">💬 규정 및 공학 추론 질의응답</div>', unsafe_allow_html=True)
-st.caption("질문과 관련된 기준 문서 부분을 골라 답변합니다.")
+st.markdown('<div class="kh-pill">💬 안전기준 및 공학 추론 질의응답</div>', unsafe_allow_html=True)
+st.caption("질문과 관련된 안전기준을 찾아 답변합니다.")
 
 AI_AVATAR = asset_path("elri.png") or "🛗"
 USER_AVATAR = "🧑‍💼"
