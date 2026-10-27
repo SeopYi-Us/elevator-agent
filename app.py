@@ -61,9 +61,12 @@ def load_data():
 df = load_data()
 
 # =====================================================================
-# 4. 입력 항목 정의 (유형별, 이미지 순서 기준)
+# 4. 입력 항목 정의
 # =====================================================================
-# 숫자로 직접 입력받는 항목 (드롭다운 없음)
+# 사이드바 최상단에 고정으로 올리는 항목 (순서 중요)
+TOP_FIELDS = ['안전인증유형', '승강기종류', '구분1']
+
+# 숫자로 직접 입력받는 항목
 NUMERIC_COLS = [
     '구동기 용량 [kW]', '정격하중 [kg]', '견인하중 [kg]', '정원 [인승]', '정격속도 [m/s]',
     '최대 운행거리 [m]', '매다는 장치 직경 [mm, (호)]', '매다는 장치 [가닥]', '주 도르래 직경 [mm]',
@@ -75,10 +78,10 @@ NUMERIC_COLS = [
     '균형추/평형추 주행안내 레일 브라켓 최대간격 [mm]',
 ]
 
-BASIC = ['안전인증유형', '승강기종류', '구분1', '신청자명', '제조업체', '업체구분',
-         '모델명', '현장명', '심사원']
+# 기본 정보 중 최상단으로 올리지 않은 나머지
+BASIC_REST = ['신청자명', '제조업체', '업체구분', '모델명', '현장명', '심사원']
 
-# ---- 일반형 (기존 그룹에서 기타 3개 제외) ----
+# ---- 일반형 ----
 DRIVE_GEN = ['구동기 모델', '구동기 용량 [kW]', '브레이크 모델', '정격하중 [kg]', '견인하중 [kg]',
              '정원 [인승]', '정격속도 [m/s]', '최대 운행거리 [m]', '매다는 장치 [종류]',
              '매다는 장치 직경 [mm, (호)]', '매다는 장치 [가닥]', '보상수단 [종류] (선택사양)',
@@ -99,7 +102,7 @@ HOIST_GEN = ['구동기 지지대 규격  [mm]', '오버밸런스율 [%]', '균�
              '카 주행안내 레일 규격 [K, (T)]', '균형추/평형추 주행안내 레일 규격  [K, (T)]',
              '카 주행안내 레일 브라켓 최대간격 [mm]', '균형추/평형추 주행안내 레일 브라켓 최대간격 [mm]']
 
-# ---- 전기식 소형화물용 (이미지 1~7) ----
+# ---- 전기식 소형화물용 ----
 DRIVE_SMALL = ['구동기 모델', '구동기 용량 [kW]', '브레이크 모델', '정격하중 [kg]', '견인하중 [kg]',
                '정격속도 [m/s]', '최대 운행거리 [m]', '매다는 장치 [종류]', '매다는 장치 직경 [mm, (호)]',
                '매다는 장치 [가닥]', '로핑방식', '로핑 구조', '주 도르래 직경 [mm]', '권부각도 α [ º ]',
@@ -109,7 +112,7 @@ CTRL_SMALL = ['제어반 모델', '주 전원 [V]', '카 조명 전원 [V]', '�
               '개문 재착상 운전 (선택사양)', '주제어 기판', 'UCMP 감지부 모델', 'UCMP 제어부 모델',
               'UCMP 정지부 모델', '안전회로기판 모델', '비상 운전방식']
 
-# ---- 경사형 (이미지 8~14) ----
+# ---- 경사형 ----
 DRIVE_SLOPE = ['구동기 모델', '구동기 용량 [kW]', '브레이크 모델', '정격하중 [kg]', '견인하중 [kg]',
                '정원 [인승]', '최대 경사각도 [ º ]', '정격속도 [m/s]', '최대 운행거리 [m]',
                '매다는 장치 [종류]', '매다는 장치 직경 [mm, (호)]', '매다는 장치 [가닥]',
@@ -150,42 +153,73 @@ LAYOUTS = {
 }
 
 # =====================================================================
-# 5. 선택지 생성 (유형별 데이터 기준, 캐시)
+# 5. 선택지 및 입력 파싱 유틸
 # =====================================================================
 @st.cache_data
+def cat_options_all(col):
+    """승강기종류, 구분1 등 상단 항목은 전체 데이터 기준으로 선택지를 만듭니다."""
+    return sorted(df[col].dropna().astype(str).unique().tolist())
+
+@st.cache_data
 def cat_options(gubun, col):
+    """구분2 유형별 데이터 기준으로 선택지를 만듭니다."""
     sub = df[df["구분2"].astype(str) == gubun]
     return sorted(sub[col].dropna().astype(str).unique().tolist())
 
+def parse_num(text):
+    """
+    입력한 문자열을 그대로 존중해서 숫자로 변환합니다.
+    반환: (정상 여부, 값). 비어 있으면 (True, None).
+    소수점 자리수는 바꾸지 않습니다. 예) '3000' -> 3000.0 (표시는 입력 원문 유지)
+    """
+    t = text.strip().replace(",", "")
+    if t == "":
+        return True, None
+    try:
+        return True, float(t)
+    except ValueError:
+        return False, None
+
 # =====================================================================
-# 6. 사이드바: 유형 선택 → 버튼 → 그룹별 입력
+# 6. 사이드바
 # =====================================================================
 st.sidebar.header("📋 세부 제원 입력")
 
-gubun = st.sidebar.selectbox("구분2 (승강기 유형)", TYPES, index=0, key="gubun")
-
-btn_slot = st.sidebar.container()
-st.sidebar.caption("'선택 안 함'은 조건에서 제외됩니다. 숫자 항목은 값을 입력한 것만 반영됩니다.")
-
 user_inputs = {}
 
-# 기본 정보 (유형 공통)
-with st.sidebar.expander(f"기본 정보 ({len(BASIC)})", expanded=True):
-    for col in BASIC:
-        opts = cat_options(gubun, col)
-        choice = st.selectbox(col, ["선택 안 함"] + opts, key=f"cat|{gubun}|{col}")
+# (1) 최상단 고정 항목: 안전인증유형 → 승강기종류 → 구분1 → 구분2
+for col in TOP_FIELDS:
+    choice = st.sidebar.selectbox(col, ["선택 안 함"] + cat_options_all(col), key=f"top|{col}")
+    user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
+
+gubun = st.sidebar.selectbox("구분2 (승강기 유형)", TYPES, index=0, key="gubun")
+
+# (2) 예측 버튼 자리
+btn_slot = st.sidebar.container()
+st.sidebar.caption("'선택 안 함'은 조건에서 제외됩니다. 숫자 항목은 입력한 값 그대로 사용되며, 비워 두면 제외됩니다.")
+
+# (3) 나머지 기본 정보
+with st.sidebar.expander(f"기본 정보 ({len(BASIC_REST)})", expanded=True):
+    for col in BASIC_REST:
+        choice = st.selectbox(col, ["선택 안 함"] + cat_options(gubun, col), key=f"cat|{gubun}|{col}")
         user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
 
-# 유형별 그룹
+# (4) 유형별 그룹
 for group_name, cols in LAYOUTS[gubun]:
     with st.sidebar.expander(f"{group_name} ({len(cols)})", expanded=False):
         for col in cols:
             if col in NUMERIC_COLS:
-                num = st.number_input(col, value=None, key=f"num|{gubun}|{col}")
-                user_inputs[col] = ("num", float(num)) if num is not None else None
+                raw = st.text_input(
+                    col,
+                    key=f"num|{gubun}|{col}",
+                    placeholder="숫자 입력 (비우면 제외)",
+                )
+                ok, num = parse_num(raw)
+                if not ok:
+                    st.warning(f"'{col}': 숫자만 입력해 주세요.")
+                user_inputs[col] = ("num", num) if (ok and num is not None) else None
             else:
-                opts = cat_options(gubun, col)
-                choice = st.selectbox(col, ["선택 안 함"] + opts, key=f"cat|{gubun}|{col}")
+                choice = st.selectbox(col, ["선택 안 함"] + cat_options(gubun, col), key=f"cat|{gubun}|{col}")
                 user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
 
 run = btn_slot.button("예측 분석 실행", type="primary", use_container_width=True)
