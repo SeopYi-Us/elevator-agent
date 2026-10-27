@@ -24,7 +24,15 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
 html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
-.block-container { padding-top: 3.5rem; padding-bottom: 3rem; max-width: 1180px; }
+
+/* 본문 폭을 넓혀서 환영 문구가 한두 줄에 자연스럽게 들어가게 합니다 */
+.block-container { padding-top: 3.5rem; padding-bottom: 2rem;
+    padding-left: 2.5rem; padding-right: 2.5rem; max-width: 1560px; }
+
+/* 질의응답 블록을 화면 하단에 붙입니다 (위 내용이 짧으면 가운데가 비고, 아래에 고정) */
+div[data-testid="stVerticalBlock"]:has(> div.st-key-qa_section) {
+    display: flex; flex-direction: column; min-height: calc(100vh - 7rem); }
+.st-key-qa_section { margin-top: auto; }
 
 /* ---------- 헤더 ---------- */
 .kh-topbar { height: 6px; border-radius: 6px 6px 0 0;
@@ -488,26 +496,25 @@ if "result" in st.session_state:
                 st.session_state.submit_from_button = True
                 st.rerun()
 
-st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
-
 # =====================================================================
-# 10. 질의응답 (제목과 설명 → 대화 기록 → 입력창 순서로 한 덩어리)
+# 10. 질의응답 (화면 하단에 고정되는 블록)
 # =====================================================================
-st.markdown('<div class="kh-pill">💬 안전기준 및 공학 추론 질의응답</div>', unsafe_allow_html=True)
-st.caption("질문과 관련된 안전기준을 찾아 답변합니다.")
-
 AI_AVATAR = asset_path("elri.png") or "🛗"
 USER_AVATAR = "🧑‍💼"
 
-chat_box = st.container()
+qa = st.container(key="qa_section")
+with qa:
+    st.markdown('<div class="kh-pill">💬 안전기준 및 공학 추론 질의응답</div>', unsafe_allow_html=True)
+    st.caption("질문과 관련된 안전기준을 찾아 답변합니다.")
 
-with chat_box:
-    for message in st.session_state.messages:
-        avatar = USER_AVATAR if message["role"] == "user" else AI_AVATAR
-        with st.chat_message(message["role"], avatar=avatar):
-            st.markdown(message["content"])
+    chat_box = st.container()
+    with chat_box:
+        for message in st.session_state.messages:
+            avatar = USER_AVATAR if message["role"] == "user" else AI_AVATAR
+            with st.chat_message(message["role"], avatar=avatar):
+                st.markdown(message["content"])
 
-    prompt_input = st.chat_input("질문을 입력하세요. (예: 매다는 장치 안전율 계산 관련 안전기준을 알려줘)")
+        prompt_input = st.chat_input("질문을 입력하세요. (예: 매다는 장치 안전율 계산 관련 안전기준을 알려줘)")
 
 trigger = False
 
