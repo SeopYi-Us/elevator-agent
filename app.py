@@ -117,7 +117,7 @@ st.markdown(
     '<div class="kh-topbar"></div>'
     '<div class="kh-header">' + logo_tag +
     '<div><div class="kh-title">승강기 설계심사 에이전트</div>'
-    '<div class="kh-sub">승강기안전기술원 설계심사 부적합 사항 예측 및 안전 기준 질의</div></div></div>',
+    '<div class="kh-sub">승강기 안전인증 설계심사 부적합 사항 예측 및 안전 기준 질의</div></div></div>',
     unsafe_allow_html=True,
 )
 
