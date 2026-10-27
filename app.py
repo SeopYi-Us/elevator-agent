@@ -491,7 +491,7 @@ if "result" in st.session_state:
 st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
 # =====================================================================
-# 10. 질의응답
+# 10. 질의응답 (제목과 설명 → 대화 기록 → 입력창 순서로 한 덩어리)
 # =====================================================================
 st.markdown('<div class="kh-pill">💬 안전기준 및 공학 추론 질의응답</div>', unsafe_allow_html=True)
 st.caption("질문과 관련된 안전기준을 찾아 답변합니다.")
@@ -499,12 +499,16 @@ st.caption("질문과 관련된 안전기준을 찾아 답변합니다.")
 AI_AVATAR = asset_path("elri.png") or "🛗"
 USER_AVATAR = "🧑‍💼"
 
-for message in st.session_state.messages:
-    avatar = USER_AVATAR if message["role"] == "user" else AI_AVATAR
-    with st.chat_message(message["role"], avatar=avatar):
-        st.markdown(message["content"])
+chat_box = st.container()
 
-prompt_input = st.chat_input("질문을 입력하세요. (예: 매다는 장치 안전율 계산 관련 안전기준을 알려줘)")
+with chat_box:
+    for message in st.session_state.messages:
+        avatar = USER_AVATAR if message["role"] == "user" else AI_AVATAR
+        with st.chat_message(message["role"], avatar=avatar):
+            st.markdown(message["content"])
+
+    prompt_input = st.chat_input("질문을 입력하세요. (예: 매다는 장치 안전율 계산 관련 안전기준을 알려줘)")
+
 trigger = False
 
 if prompt_input:
@@ -516,29 +520,30 @@ elif st.session_state.submit_from_button:
 
 if trigger:
     latest_user_msg = st.session_state.messages[-1]["content"]
-    with st.chat_message("user", avatar=USER_AVATAR):
-        st.markdown(latest_user_msg)
+    with chat_box:
+        with st.chat_message("user", avatar=USER_AVATAR):
+            st.markdown(latest_user_msg)
 
-    with st.chat_message("assistant", avatar=AI_AVATAR):
-        with st.spinner("관련 기준을 찾고 답변을 준비하는 중..."):
-            related = "\n\n".join(retrieve_chunks(latest_user_msg, PDF_CHUNKS, k=5))
-            system_prompt = f"""
-            당신은 한국 승강기안전공단의 설계심사 최고 권위자이자 기계공학 전문가입니다.
-            사용자의 질문에 대해 기계공학적 배경지식과, 아래 [참고 기준 문서]에 근거하여 전문가적인 어조로 답변하세요.
-            문서에 없는 공학적 계산(예: 오일러 좌굴 하중 등)은 물리/기계공학 지식을 활용해 수식과 함께 설명하세요.
-            출처는 페이지 번호 대신 문서 내 조항 번호나 항목 제목으로 명시하십시오.
-            문서에서 근거를 찾을 수 없으면 그렇다고 말하고, 일반 공학 지식으로 답하고 있음을 밝히세요.
+        with st.chat_message("assistant", avatar=AI_AVATAR):
+            with st.spinner("관련 기준을 찾고 답변을 준비하는 중..."):
+                related = "\n\n".join(retrieve_chunks(latest_user_msg, PDF_CHUNKS, k=5))
+                system_prompt = f"""
+                당신은 한국 승강기안전공단의 설계심사 최고 권위자이자 기계공학 전문가입니다.
+                사용자의 질문에 대해 기계공학적 배경지식과, 아래 [참고 기준 문서]에 근거하여 전문가적인 어조로 답변하세요.
+                문서에 없는 공학적 계산(예: 오일러 좌굴 하중 등)은 물리/기계공학 지식을 활용해 수식과 함께 설명하세요.
+                출처는 페이지 번호 대신 문서 내 조항 번호나 항목 제목으로 명시하십시오.
+                문서에서 근거를 찾을 수 없으면 그렇다고 말하고, 일반 공학 지식으로 답하고 있음을 밝히세요.
 
-            [참고 기준 문서 내용]
-            {related}
+                [참고 기준 문서 내용]
+                {related}
 
-            사용자 질문: {latest_user_msg}
-            """
-            try:
-                answer = call_gemini(system_prompt, max_tokens=2000)
-                st.markdown(answer)
-                st.session_state.messages.append({"role": "assistant", "content": answer})
-            except gexc.ResourceExhausted:
-                st.error("AI 사용량 한도에 도달했습니다. 잠시 후 다시 질문해 주세요.")
-            except Exception as e:
-                st.error(f"답변 생성 중 오류가 발생했습니다: {e}")
+                사용자 질문: {latest_user_msg}
+                """
+                try:
+                    answer = call_gemini(system_prompt, max_tokens=2000)
+                    st.markdown(answer)
+                    st.session_state.messages.append({"role": "assistant", "content": answer})
+                except gexc.ResourceExhausted:
+                    st.error("AI 사용량 한도에 도달했습니다. 잠시 후 다시 질문해 주세요.")
+                except Exception as e:
+                    st.error(f"답변 생성 중 오류가 발생했습니다: {e}")
