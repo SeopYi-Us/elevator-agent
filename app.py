@@ -25,14 +25,13 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
 html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
 
-/* 본문 폭을 넓혀서 환영 문구가 한두 줄에 자연스럽게 들어가게 합니다 */
 .block-container { padding-top: 3.5rem; padding-bottom: 2rem;
     padding-left: 2.5rem; padding-right: 2.5rem; max-width: 1560px; }
 
-/* 질의응답 블록을 화면 하단에 붙입니다 (위 내용이 짧으면 가운데가 비고, 아래에 고정) */
-div[data-testid="stVerticalBlock"]:has(> div.st-key-qa_section) {
-    display: flex; flex-direction: column; min-height: calc(100vh - 7rem); }
-.st-key-qa_section { margin-top: auto; }
+/* 본문 바깥 블록을 세로 flex로 만들고, 질의응답 블록을 맨 아래로 밀어 냅니다 */
+div[data-testid="stVerticalBlock"]:has(.st-key-qa_section) {
+    display: flex; flex-direction: column; min-height: calc(100vh - 6rem); }
+.st-key-qa_section { margin-top: auto !important; }
 
 /* ---------- 헤더 ---------- */
 .kh-topbar { height: 6px; border-radius: 6px 6px 0 0;
