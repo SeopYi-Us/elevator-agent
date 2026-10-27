@@ -143,7 +143,6 @@ GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
 
 MODEL_NAME = "gemini-3.5-flash-lite"
-
 model = genai.GenerativeModel(MODEL_NAME)
 
 AI_TIMEOUT = 45            # AI 응답을 이 시간(초) 안에 받지 못하면 중단
@@ -494,6 +493,7 @@ if run:
 
     if not active:
         st.session_state.pop("result", None)
+        st.session_state.pop("ai_key", None)
         st.warning("제원을 하나 이상 선택하거나 입력해 주세요.")
     else:
         active_items = tuple(sorted(((c, k, v) for c, (k, v) in active.items()), key=lambda x: x[0]))
@@ -501,6 +501,8 @@ if run:
         with st.spinner("유사 사례를 찾는 중..."):
             base_n, top_n, raw_n, groups = compute_groups(gubun, active_items)
 
+        # 먼저 ai_key를 저장한 뒤 result를 저장합니다 (중간에 끊겨도 짝이 맞도록)
+        st.session_state.ai_key = (gubun, active_items)
         st.session_state.result = {
             "gubun": gubun,
             "base_n": base_n,
@@ -509,7 +511,6 @@ if run:
             "unique_n": len(groups),
             "groups": groups[:TOP_GROUPS_SHOW],
         }
-        st.session_state.ai_key = (gubun, active_items)
 
 # =====================================================================
 # 9. 분석 결과 (환영 배너와 질의응답 사이에 표시)
@@ -532,11 +533,16 @@ with result_section:
             st.warning("내용이 모호하거나 확실하지 않은 경우, 반드시 관련 안전기준 원문 항목을 직접 확인하시기 바랍니다.")
 
             ai_slot = st.empty()
-            render_ai_summary(ai_slot, r["groups"], st.session_state.ai_key)
+            ai_key = st.session_state.get("ai_key")
+            if ai_key is None:
+                st.session_state.pop("result", None)
+                st.info("결과가 중간에 끊겼습니다. 예측 분석 실행을 다시 눌러 주세요.")
+            else:
+                render_ai_summary(ai_slot, r["groups"], ai_key)
 
-        if r["groups"]:
+        if "result" in st.session_state and st.session_state.result["groups"]:
             st.markdown('<div class="kh-pill">💡 관련 추천 질문</div>', unsafe_allow_html=True)
-            suggestions = [f"'{rep[:30]}' 관련 안전기준은?" for rep, _ in r["groups"][:3]]
+            suggestions = [f"'{rep[:30]}' 관련 안전기준은?" for rep, _ in st.session_state.result["groups"][:3]]
             q_cols = st.columns(len(suggestions))
             for i, q in enumerate(suggestions):
                 if q_cols[i].button(q, key=f"rq_{i}", use_container_width=True):
