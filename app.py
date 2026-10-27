@@ -24,39 +24,76 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
 html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
-.block-container { padding-top: 3.5rem; padding-bottom: 2rem; max-width: 1200px; }
+.block-container { padding-top: 3.5rem; padding-bottom: 3rem; max-width: 1180px; }
 
+/* ---------- 헤더 ---------- */
 .kh-topbar { height: 6px; border-radius: 6px 6px 0 0;
-    background: linear-gradient(90deg, #F47920 0%, #F47920 35%, #03BFD7 70%, #0A7FC1 100%); }
-.kh-header { display: flex; align-items: center; gap: 18px; background: #ffffff;
-    padding: 14px 22px; border-radius: 0 0 14px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.08);
-    margin-bottom: 18px; }
-.kh-header img { height: 44px; }
-.kh-header .kh-title { font-size: 1.4rem; font-weight: 800; color: #0A3D62; }
-.kh-header .kh-sub { font-size: 0.85rem; color: #6d6e71; }
+    background: linear-gradient(90deg, #F47920 0%, #FDB913 35%, #03BFD7 70%, #0A7FC1 100%); }
+.kh-header { display: flex; align-items: center; gap: 20px; background: #ffffff; color: #1d2b3a;
+    padding: 16px 24px; border-radius: 0 0 16px 16px; box-shadow: 0 8px 24px rgba(10,61,98,.10);
+    margin-bottom: 22px; }
+.kh-header img { height: 46px; }
+.kh-header .kh-title { font-size: 1.45rem; font-weight: 800; color: #0A3D62; }
+.kh-header .kh-sub { font-size: 0.86rem; color: #6d6e71; margin-top: 2px; }
 
-.kh-hero { display: flex; align-items: center; gap: 24px; margin-bottom: 22px;
-    background: linear-gradient(120deg, #E6F9FC 0%, #FFF8E6 100%);
-    border-radius: 18px; padding: 22px 28px; }
-.kh-hero img.char { height: 130px; }
-.kh-hero h2 { margin: 0; font-size: 1.45rem; font-weight: 800; color: #0A3D62; }
-.kh-hero p { margin: 6px 0 0 0; color: #4a4a4a; font-size: 0.95rem; }
+/* ---------- 환영 카드 ---------- */
+.kh-hero { display: flex; align-items: center; gap: 28px; margin-bottom: 26px;
+    background: linear-gradient(120deg, #E6F9FC 0%, #FFFFFF 55%, #FFF6E0 100%);
+    border: 1px solid #DDF3F8; border-radius: 22px; padding: 22px 30px;
+    box-shadow: 0 10px 30px rgba(3,191,215,.12); }
+.kh-hero .frame { background: #ffffff; border-radius: 16px; padding: 8px;
+    box-shadow: 0 6px 16px rgba(10,61,98,.10); flex-shrink: 0; }
+.kh-hero .frame img { height: 130px; display: block; }
+.kh-hero h2 { margin: 0; font-size: 1.5rem; font-weight: 800; color: #0A3D62; line-height: 1.35; }
+.kh-hero p { margin: 10px 0 0 0; color: #4a4a4a; font-size: 0.96rem; line-height: 1.65; }
+.kh-hero .kh-chip { display: inline-block; font-size: 0.75rem; font-weight: 700; color: #0A7FC1;
+    background: #ffffff; border: 1px solid #BFE9F2; border-radius: 999px; padding: 3px 12px; margin-bottom: 10px; }
 
-.kh-section { font-size: 1.12rem; font-weight: 800; color: #0A3D62;
-    border-bottom: 3px solid #03BFD7; padding-bottom: 6px; margin: 6px 0 14px 0; display: inline-block; }
+/* ---------- 섹션 제목 (알약 모양) ---------- */
+.kh-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 1.05rem; font-weight: 800;
+    color: #0A3D62; background: #ffffff; border: 1px solid #DDEFF5; border-radius: 999px;
+    padding: 8px 18px; box-shadow: 0 4px 12px rgba(10,61,98,.06); margin: 10px 0 16px 0; }
 
+/* ---------- 결과 카드 ---------- */
+div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] {
+    gap: 0.9rem; }
+div[data-testid="stMetric"] { background: linear-gradient(135deg, #F3FBFD, #FFFFFF);
+    border: 1px solid #DDEFF5; border-left: 4px solid #03BFD7;
+    border-radius: 14px; padding: 0.8rem 1rem; }
+div[data-testid="stMetric"] label p { color: #6d6e71 !important; font-weight: 700; }
+
+/* ---------- 경고/안내 ---------- */
+div[data-testid="stAlert"] { border-radius: 14px; }
+
+/* ---------- 추천 질문 버튼 ---------- */
+div[data-testid="column"] button[kind="secondary"] {
+    border-radius: 999px; border: 1px solid #BFE9F2; color: #0A7FC1; font-weight: 700;
+    background: #F7FDFE; min-height: 2.6rem; }
+div[data-testid="column"] button[kind="secondary"]:hover {
+    border-color: #03BFD7; background: #E6F9FC; color: #0A3D62; }
+
+/* ---------- 채팅 말풍선 ---------- */
+div[data-testid="stChatMessage"] {
+    background: #ffffff; border: 1px solid #EAF1F6; border-radius: 18px;
+    padding: 12px 18px; box-shadow: 0 4px 14px rgba(10,61,98,.06); margin-bottom: 12px; }
+div[data-testid="stChatMessage"] p, div[data-testid="stChatMessage"] li,
+div[data-testid="stChatMessage"] h1, div[data-testid="stChatMessage"] h2,
+div[data-testid="stChatMessage"] h3, div[data-testid="stChatMessage"] strong {
+    color: #1d2b3a !important; }
+
+/* ---------- 사이드바 ---------- */
 .side-title { font-size: 1.1rem; font-weight: 800; color: #0A7FC1;
-    border-left: 5px solid #FDB913; padding-left: 8px; margin: 0.4rem 0 0.5rem 0; }
-.side-note { font-size: 0.78rem; opacity: 0.75; line-height: 1.5; margin: 0.3rem 0 0.8rem 0; }
-div[data-testid="stExpander"] { border-radius: 12px; border: 1px solid rgba(3,191,215,.35); }
-div[data-testid="stExpander"] summary p { font-weight: 700; }
+    border-left: 5px solid #FDB913; padding-left: 10px; margin: 0.4rem 0 0.6rem 0; }
+.side-note { font-size: 0.78rem; opacity: 0.75; line-height: 1.55; margin: 0.3rem 0 1rem 0; }
+div[data-testid="stExpander"] { border-radius: 14px; border: 1px solid #CDEFF6;
+    box-shadow: 0 2px 8px rgba(3,191,215,.08); margin-bottom: 8px; }
+div[data-testid="stExpander"] summary p { font-weight: 800; color: #0A3D62; }
 
+/* ---------- 실행 버튼 ---------- */
 button[kind="primary"] { background: linear-gradient(90deg, #F47920, #FDB913) !important;
-    border: none !important; color: #ffffff !important; border-radius: 10px;
-    font-weight: 800; height: 2.8rem; }
-
-div[data-testid="stMetric"] { background: #F3FBFD; border-left: 4px solid #03BFD7;
-    border-radius: 12px; padding: 0.8rem 1rem; }
+    border: none !important; color: #ffffff !important; border-radius: 12px;
+    font-weight: 800; height: 3rem; box-shadow: 0 6px 16px rgba(244,121,32,.30); }
+button[kind="primary"]:hover { filter: brightness(1.05); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -88,12 +125,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---- 환영 배너 (환영합니다 캐릭터) ----
+# ---- 환영 카드 ----
 hello_uri = img_uri("char_hello.png")
-hello_tag = f'<img class="char" src="{hello_uri}">' if hello_uri else ""
+hello_frame = f'<div class="frame"><img src="{hello_uri}"></div>' if hello_uri else ""
 st.markdown(
-    '<div class="kh-hero">' + hello_tag +
-    '<div><h2>입력한 제원으로 부적합 사항을 미리 확인하세요</h2>'
+    '<div class="kh-hero">' + hello_frame +
+    '<div><span class="kh-chip">AI 설계심사 도우미</span>'
+    '<h2>입력한 제원으로 부적합 사항을 미리 확인하세요</h2>'
     '<p>왼쪽에서 승강기 유형과 제원을 고르고 <b>예측 분석 실행</b>을 누르면, '
     '과거 개별인증 사례에서 비슷하게 나온 부적합 사항을 정리해 드립니다.</p></div></div>',
     unsafe_allow_html=True,
@@ -420,10 +458,8 @@ if run:
                 st.session_state.analysis_error = f"AI 요약 중 오류가 발생했습니다: {e}"
 
 # =====================================================================
-# 9. 결과 표시
+# 9. 분석 결과 (섹션 제목 없이 카드로 바로 표시)
 # =====================================================================
-st.markdown('<div class="kh-section">🧠 예상 주요 부적합 사항</div>', unsafe_allow_html=True)
-
 if "result" in st.session_state:
     r = st.session_state.result
 
@@ -444,7 +480,7 @@ if "result" in st.session_state:
             st.info("연관 사례는 있으나 분석할 부적합 내용이 없습니다.")
 
     if st.session_state.get("recommended_questions"):
-        st.markdown("##### 💡 관련 추천 질문")
+        st.markdown('<div class="kh-pill">💡 관련 추천 질문</div>', unsafe_allow_html=True)
         q_cols = st.columns(len(st.session_state.recommended_questions))
         for i, q in enumerate(st.session_state.recommended_questions):
             if q_cols[i].button(q, key=f"rq_{i}", use_container_width=True):
@@ -452,12 +488,12 @@ if "result" in st.session_state:
                 st.session_state.submit_from_button = True
                 st.rerun()
 
-st.divider()
+st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
 # =====================================================================
 # 10. 질의응답
 # =====================================================================
-st.markdown('<div class="kh-section">💬 규정 및 공학 추론 질의응답</div>', unsafe_allow_html=True)
+st.markdown('<div class="kh-pill">💬 규정 및 공학 추론 질의응답</div>', unsafe_allow_html=True)
 st.caption("질문과 관련된 기준 문서 부분을 골라 답변합니다.")
 
 AI_AVATAR = asset_path("elri.png") or "🛗"
