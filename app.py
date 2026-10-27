@@ -33,6 +33,9 @@ div[data-testid="stVerticalBlock"]:has(.st-key-qa_section) {
     display: flex; flex-direction: column; min-height: calc(100vh - 6rem); }
 .st-key-qa_section { margin-top: auto !important; }
 
+/* 결과 영역: 환영 배너 아래, 질의응답 위 */
+.st-key-result_section { width: 100%; }
+
 /* ---------- 헤더 ---------- */
 .kh-topbar { height: 6px; border-radius: 6px 6px 0 0;
     background: linear-gradient(90deg, #F47920 0%, #FDB913 35%, #03BFD7 70%, #0A7FC1 100%); }
@@ -465,35 +468,37 @@ if run:
                 st.session_state.analysis_error = f"AI 요약 중 오류가 발생했습니다: {e}"
 
 # =====================================================================
-# 9. 분석 결과 (섹션 제목 없이 카드로 바로 표시)
+# 9. 분석 결과 (환영 배너와 질의응답 사이에 표시)
 # =====================================================================
-if "result" in st.session_state:
-    r = st.session_state.result
+result_section = st.container(key="result_section")
+with result_section:
+    if "result" in st.session_state:
+        r = st.session_state.result
 
-    with st.container(border=True):
-        c1, c2, c3 = st.columns(3)
-        c1.metric("유형", r["gubun"])
-        c2.metric("분석 대상", f"{r['top_n']:,}건")
-        c3.metric("입력 항목", f"{r['active_n']}개")
-        st.caption(f"전체 {r['base_n']:,}건 중 입력 조건과 가장 가까운 {r['top_n']:,}건을 분석했습니다.")
+        with st.container(border=True):
+            c1, c2, c3 = st.columns(3)
+            c1.metric("유형", r["gubun"])
+            c2.metric("분석 대상", f"{r['top_n']:,}건")
+            c3.metric("입력 항목", f"{r['active_n']}개")
+            st.caption(f"전체 {r['base_n']:,}건 중 입력 조건과 가장 가까운 {r['top_n']:,}건을 분석했습니다.")
 
-        st.warning("내용이 모호하거나 확실하지 않은 경우, 반드시 관련 안전기준 원문 항목을 직접 확인하시기 바랍니다.")
+            st.warning("내용이 모호하거나 확실하지 않은 경우, 반드시 관련 안전기준 원문 항목을 직접 확인하시기 바랍니다.")
 
-        if st.session_state.get("analysis_error"):
-            st.error(st.session_state.analysis_error)
-        elif st.session_state.get("analysis_result"):
-            st.markdown(st.session_state.analysis_result)
-        elif r["issue_n"] == 0:
-            st.info("연관 사례는 있으나 분석할 부적합 내용이 없습니다.")
+            if st.session_state.get("analysis_error"):
+                st.error(st.session_state.analysis_error)
+            elif st.session_state.get("analysis_result"):
+                st.markdown(st.session_state.analysis_result)
+            elif r["issue_n"] == 0:
+                st.info("연관 사례는 있으나 분석할 부적합 내용이 없습니다.")
 
-    if st.session_state.get("recommended_questions"):
-        st.markdown('<div class="kh-pill">💡 관련 추천 질문</div>', unsafe_allow_html=True)
-        q_cols = st.columns(len(st.session_state.recommended_questions))
-        for i, q in enumerate(st.session_state.recommended_questions):
-            if q_cols[i].button(q, key=f"rq_{i}", use_container_width=True):
-                st.session_state.messages.append({"role": "user", "content": q})
-                st.session_state.submit_from_button = True
-                st.rerun()
+        if st.session_state.get("recommended_questions"):
+            st.markdown('<div class="kh-pill">💡 관련 추천 질문</div>', unsafe_allow_html=True)
+            q_cols = st.columns(len(st.session_state.recommended_questions))
+            for i, q in enumerate(st.session_state.recommended_questions):
+                if q_cols[i].button(q, key=f"rq_{i}", use_container_width=True):
+                    st.session_state.messages.append({"role": "user", "content": q})
+                    st.session_state.submit_from_button = True
+                    st.rerun()
 
 # =====================================================================
 # 10. 질의응답 (화면 하단에 고정되는 블록)
