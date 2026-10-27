@@ -170,9 +170,9 @@ def parse_num(text):
     """
     입력한 문자열을 그대로 존중해서 숫자로 변환합니다.
     반환: (정상 여부, 값). 비어 있으면 (True, None).
-    소수점 자리수는 바꾸지 않습니다. 예) '3000' -> 3000.0 (표시는 입력 원문 유지)
+    None이 들어와도 빈 문자열로 처리합니다.
     """
-    t = text.strip().replace(",", "")
+    t = (text or "").strip().replace(",", "")
     if t == "":
         return True, None
     try:
@@ -211,7 +211,7 @@ for group_name, cols in LAYOUTS[gubun]:
             if col in NUMERIC_COLS:
                 raw = st.text_input(
                     col,
-                    key=f"num|{gubun}|{col}",
+                    key=f"txt|{gubun}|{col}",
                     placeholder="숫자 입력 (비우면 제외)",
                 )
                 ok, num = parse_num(raw)
