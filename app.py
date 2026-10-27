@@ -1,6 +1,5 @@
 import os
 import re
-import time
 import base64
 import streamlit as st
 import pandas as pd
@@ -28,15 +27,11 @@ html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
 .block-container { padding-top: 3.5rem; padding-bottom: 2rem;
     padding-left: 2.5rem; padding-right: 2.5rem; max-width: 1560px; }
 
-/* 본문 바깥 블록을 세로 flex로 만들고, 질의응답 블록을 맨 아래로 밀어 냅니다 */
 div[data-testid="stVerticalBlock"]:has(.st-key-qa_section) {
     display: flex; flex-direction: column; min-height: calc(100vh - 6rem); }
 .st-key-qa_section { margin-top: auto !important; }
-
-/* 결과 영역: 환영 배너 아래, 질의응답 위 */
 .st-key-result_section { width: 100%; }
 
-/* ---------- 헤더 ---------- */
 .kh-topbar { height: 6px; border-radius: 6px 6px 0 0;
     background: linear-gradient(90deg, #F47920 0%, #FDB913 35%, #03BFD7 70%, #0A7FC1 100%); }
 .kh-header { display: flex; align-items: center; gap: 20px; background: #ffffff; color: #1d2b3a;
@@ -46,7 +41,6 @@ div[data-testid="stVerticalBlock"]:has(.st-key-qa_section) {
 .kh-header .kh-title { font-size: 1.45rem; font-weight: 800; color: #0A3D62; }
 .kh-header .kh-sub { font-size: 0.86rem; color: #6d6e71; margin-top: 2px; }
 
-/* ---------- 환영 카드 ---------- */
 .kh-hero { display: flex; align-items: center; gap: 28px; margin-bottom: 26px;
     background: linear-gradient(120deg, #E6F9FC 0%, #FFFFFF 55%, #FFF6E0 100%);
     border: 1px solid #DDF3F8; border-radius: 22px; padding: 22px 30px;
@@ -59,12 +53,10 @@ div[data-testid="stVerticalBlock"]:has(.st-key-qa_section) {
 .kh-hero .kh-chip { display: inline-block; font-size: 0.75rem; font-weight: 700; color: #0A7FC1;
     background: #ffffff; border: 1px solid #BFE9F2; border-radius: 999px; padding: 3px 12px; margin-bottom: 10px; }
 
-/* ---------- 섹션 제목 (알약 모양) ---------- */
 .kh-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 1.05rem; font-weight: 800;
     color: #0A3D62; background: #ffffff; border: 1px solid #DDEFF5; border-radius: 999px;
     padding: 8px 18px; box-shadow: 0 4px 12px rgba(10,61,98,.06); margin: 10px 0 16px 0; }
 
-/* ---------- 결과 카드 ---------- */
 div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] {
     gap: 0.9rem; }
 div[data-testid="stMetric"] { background: linear-gradient(135deg, #F3FBFD, #FFFFFF);
@@ -72,17 +64,14 @@ div[data-testid="stMetric"] { background: linear-gradient(135deg, #F3FBFD, #FFFF
     border-radius: 14px; padding: 0.8rem 1rem; }
 div[data-testid="stMetric"] label p { color: #6d6e71 !important; font-weight: 700; }
 
-/* ---------- 경고/안내 ---------- */
 div[data-testid="stAlert"] { border-radius: 14px; }
 
-/* ---------- 추천 질문 버튼 ---------- */
 div[data-testid="column"] button[kind="secondary"] {
     border-radius: 999px; border: 1px solid #BFE9F2; color: #0A7FC1; font-weight: 700;
     background: #F7FDFE; min-height: 2.6rem; }
 div[data-testid="column"] button[kind="secondary"]:hover {
     border-color: #03BFD7; background: #E6F9FC; color: #0A3D62; }
 
-/* ---------- 채팅 말풍선 ---------- */
 div[data-testid="stChatMessage"] {
     background: #ffffff; border: 1px solid #EAF1F6; border-radius: 18px;
     padding: 12px 18px; box-shadow: 0 4px 14px rgba(10,61,98,.06); margin-bottom: 12px; }
@@ -91,7 +80,6 @@ div[data-testid="stChatMessage"] h1, div[data-testid="stChatMessage"] h2,
 div[data-testid="stChatMessage"] h3, div[data-testid="stChatMessage"] strong {
     color: #1d2b3a !important; }
 
-/* ---------- 사이드바 ---------- */
 .side-title { font-size: 1.1rem; font-weight: 800; color: #0A7FC1;
     border-left: 5px solid #FDB913; padding-left: 10px; margin: 0.4rem 0 0.6rem 0; }
 .side-note { font-size: 0.78rem; opacity: 0.75; line-height: 1.55; margin: 0.3rem 0 1rem 0; }
@@ -99,7 +87,6 @@ div[data-testid="stExpander"] { border-radius: 14px; border: 1px solid #CDEFF6;
     box-shadow: 0 2px 8px rgba(3,191,215,.08); margin-bottom: 8px; }
 div[data-testid="stExpander"] summary p { font-weight: 800; color: #0A3D62; }
 
-/* ---------- 실행 버튼 ---------- */
 button[kind="primary"] { background: linear-gradient(90deg, #F47920, #FDB913) !important;
     border: none !important; color: #ffffff !important; border-radius: 12px;
     font-weight: 800; height: 3rem; box-shadow: 0 6px 16px rgba(244,121,32,.30); }
@@ -124,7 +111,6 @@ def asset_path(name):
     p = os.path.join(ASSET_DIR, name)
     return p if os.path.exists(p) else None
 
-# ---- 상단 헤더 ----
 logo_uri = img_uri("koelsa_logo.png")
 logo_tag = f'<img src="{logo_uri}">' if logo_uri else ""
 st.markdown(
@@ -135,7 +121,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---- 환영 카드 ----
 hello_uri = img_uri("char_hello.png")
 hello_frame = f'<div class="frame"><img src="{hello_uri}"></div>' if hello_uri else ""
 st.markdown(
@@ -157,12 +142,13 @@ if "llm_cache" not in st.session_state:
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
 
-MODEL_NAME = "gemini-3.8-flash"  # 실제 사용 가능한 모델명인지 Google AI Studio에서 확인하세요
+MODEL_NAME = "gemini-3.5-flash-lite"
+
 model = genai.GenerativeModel(MODEL_NAME)
 
-CHAT_MAX_TOKENS = 3000        # 질의응답용 출력 상한
-BATCH_MAX_TOKENS = 2048       # 묶음 요약 1회당 출력 상한
-QUESTION_MAX_TOKENS = 400     # 추천 질문 생성용 출력 상한
+AI_TIMEOUT = 45            # AI 응답을 이 시간(초) 안에 받지 못하면 중단
+SUMMARY_MAX_TOKENS = 1200  # 요약 출력 상한 (짧게 유지해서 빠르게)
+CHAT_MAX_TOKENS = 3000     # 질의응답 출력 상한
 
 # =====================================================================
 # 3. 기준 문서(PDF) 로드 및 조각내기
@@ -367,11 +353,11 @@ for group_name, cols in LAYOUTS[gubun]:
 run = btn_slot.button("🔍 예측 분석 실행", type="primary", use_container_width=True)
 
 # =====================================================================
-# 8. 연관 사례 찾기, 파이썬으로 묶기·세기, AI 요약(묶음 단위)
+# 8. 파이썬 계산 (묶기·세기, AI 없음) + AI 요약 1회
 # =====================================================================
-SAMPLE_N = 200        # 연관도 상위 몇 건을 볼지
-TOP_GROUPS = 30       # 건수 많은 묶음 상위 몇 개를 AI에 보낼지
-BATCH_SIZE = 10       # 한 번의 AI 요청에 담을 묶음 수 (짧게 나눠서 잘림 방지)
+SAMPLE_N = 200            # 연관도 상위 몇 건을 볼지
+TOP_GROUPS_SHOW = 10      # 파이썬으로 계산해 보여줄 묶음 수
+AI_TOP_K = 8              # AI 요약에 보낼 상위 묶음 수 (요청은 1번만)
 IGNORE_KEYWORDS = ["안내사항", "개별인증 신청 시 기술원 홈페이지", "인증 신청 시 작성하는", "최신 설계심사 목록표를 참조하여"]
 
 @st.cache_data(show_spinner=False)
@@ -394,18 +380,13 @@ def find_matches(gubun, active_items):
     return len(base), top
 
 def normalize_for_dedupe(s):
-    """같은 뜻 판단용 키: 페이지 표기, 공백, 문장부호, 대소문자 차이를 무시합니다."""
     s = str(s)
-    s = re.sub(r"\(\s*p\.?\s*\d+[^)]*\)", "", s, flags=re.IGNORECASE)   # (p 5), (p.13) 등
-    s = re.sub(r"\bp\.?\s*\d+\b", "", s, flags=re.IGNORECASE)            # p 5 형태
-    s = re.sub(r"[^\w가-힣]", "", s)                                     # 공백·문장부호 제거
+    s = re.sub(r"\(\s*p\.?\s*\d+[^)]*\)", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bp\.?\s*\d+\b", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"[^\w가-힣]", "", s)
     return s.lower()
 
 def group_issues(texts):
-    """
-    파이썬으로 같은 뜻의 문장을 묶고 건수를 셉니다.
-    반환: [(대표 문장, 묶인 건수), ...] 건수가 많은 순서
-    """
     groups = {}
     for t in texts:
         t = str(t).strip()
@@ -423,6 +404,20 @@ def group_issues(texts):
     result.sort(key=lambda x: -x[1])
     return result
 
+@st.cache_data(show_spinner=False)
+def compute_groups(gubun, active_items):
+    base_n, top = find_matches(gubun, active_items)
+    raw = top["부적합내용"].dropna().astype(str).str.strip()
+    raw = raw[~raw.apply(lambda x: any(k in x for k in IGNORE_KEYWORDS))]
+    groups = group_issues(raw.tolist())
+    return base_n, len(top), len(raw), groups
+
+def get_text(resp):
+    try:
+        return resp.text or ""
+    except Exception:
+        return ""
+
 def is_truncated(resp):
     try:
         reason = resp.candidates[0].finish_reason
@@ -431,75 +426,68 @@ def is_truncated(resp):
     except Exception:
         return False
 
-def get_text(resp):
-    try:
-        return resp.text or ""
-    except Exception:
-        return ""
-
 def call_gemini(prompt, max_tokens):
-    """(응답 텍스트, 끝까지 생성됐는지 여부)를 반환합니다. 한도 초과 시 한 번 재시도합니다."""
+    """(응답 텍스트, 끝까지 생성됐는지) 반환. 재시도 없이 바로 결과를 돌려줍니다."""
     config = {"max_output_tokens": max_tokens, "temperature": 0.2}
-    try:
-        resp = model.generate_content(prompt, generation_config=config)
-    except gexc.ResourceExhausted:
-        time.sleep(15)
-        resp = model.generate_content(prompt, generation_config=config)
+    resp = model.generate_content(
+        prompt,
+        generation_config=config,
+        request_options={"timeout": AI_TIMEOUT},
+    )
     return get_text(resp), not is_truncated(resp)
 
-def summarize_batch(batch):
-    """묶음 몇 개만 AI에 보내 요약합니다. 짧은 출력이라 잘릴 가능성이 낮습니다."""
-    lines = "\n".join(f"- ({cnt}건) {txt[:200]}" for txt, cnt in batch)
-    prompt = f"""
-    다음은 승강기 설계심사에서 자주 나온 부적합 사항 묶음 목록입니다.
-    괄호 안 숫자는 같은 뜻으로 묶인 실제 건수입니다.
+def build_summary_prompt(groups):
+    lines = "\n".join(f"- ({cnt}건) {txt[:150]}" for txt, cnt in groups[:AI_TOP_K])
+    return f"""
+    다음은 승강기 설계심사에서 자주 나온 부적합 사항 묶음 목록입니다. 괄호 안 숫자는 실제 건수입니다.
 
-    이 목록에서 실제로 의미 있는 부적합 유형을 최대 3개까지만 골라 아래 형식으로 작성해 주세요.
-    억지로 개수를 맞추지 마세요. 항목당 설명은 짧게 작성하세요.
+    의미 있는 부적합 유형을 최대 5개까지만 골라 아래 형식으로 짧게 작성해 주세요.
+    항목당 설명은 짧게 쓰고, 억지로 개수를 맞추지 마세요.
 
     ### [안전기준 세부 조항 번호 및 제목] 핵심 부적합 사유
-    * **부적합 내용**: (1~2문장)
-    * **유사 발생 건수**: 약 O건 (관련 묶음 건수의 합계)
-    * **엔지니어링 조언**: (한 문장)
+    * **부적합 내용**: (1문장)
+    * **유사 발생 건수**: 약 O건
+    * **엔지니어링 조언**: (1문장)
 
     목록:
     {lines}
     """
-    return call_gemini(prompt, max_tokens=BATCH_MAX_TOKENS)
 
-def make_questions(summary_text):
-    """요약 결과를 바탕으로 추천 질문 3개를 짧게 만듭니다."""
-    prompt = f"""
-    아래 승강기 설계심사 부적합 요약을 보고, 사용자가 이어서 물어볼 만한 질문 3개를 작성해 주세요.
-    반드시 아래 형식의 줄 3개만 출력하세요.
-    [추천질문] (질문 1)
-    [추천질문] (질문 2)
-    [추천질문] (질문 3)
+def render_ai_summary(slot, groups, key):
+    """AI 요약은 조건당 한 번만 호출하고, 결과는 캐시에 저장합니다."""
+    cache = st.session_state.llm_cache
 
-    요약:
-    {summary_text[:4000]}
-    """
-    text, _ = call_gemini(prompt, max_tokens=QUESTION_MAX_TOKENS)
-    return [line.replace("[추천질문]", "").strip() for line in text.split("\n") if line.startswith("[추천질문]")]
+    if not groups:
+        slot.info("연관 사례는 있으나 분석할 부적합 내용이 없습니다.")
+        return
+    if key in cache:
+        slot.markdown(cache[key])
+        return
+    if st.session_state.get("ai_error_key") == key:
+        slot.error(st.session_state.ai_error_msg)
+        return
 
-def analyze_groups(top_groups):
-    """
-    묶음을 BATCH_SIZE개씩 나눠 요약하고, 결과를 이어 붙입니다.
-    반환: (요약 텍스트, 추천 질문 목록, 잘림 여부)
-    """
-    sections, truncated = [], False
-    batches = [top_groups[i:i + BATCH_SIZE] for i in range(0, len(top_groups), BATCH_SIZE)]
+    with slot:
+        with st.spinner("AI 요약 작성 중... (최대 45초)"):
+            try:
+                text, complete = call_gemini(build_summary_prompt(groups), max_tokens=SUMMARY_MAX_TOKENS)
+                st.session_state.pop("ai_error_key", None)
+            except gexc.ResourceExhausted:
+                st.session_state.ai_error_key = key
+                st.session_state.ai_error_msg = "AI 사용량 한도에 도달했습니다. 잠시 후 다시 실행해 주세요."
+                slot.error(st.session_state.ai_error_msg)
+                return
+            except Exception as e:
+                st.session_state.ai_error_key = key
+                st.session_state.ai_error_msg = f"AI 요약이 완료되지 않았습니다(시간 초과 또는 오류): {e}"
+                slot.error(st.session_state.ai_error_msg)
+                return
 
-    for batch in batches:
-        text, complete = summarize_batch(batch)
-        if text.strip():
-            sections.append(text.strip())
-        if not complete:
-            truncated = True
-
-    main_text = "\n\n".join(sections)
-    questions = make_questions(main_text) if main_text else []
-    return main_text, questions, truncated
+    if complete:
+        cache[key] = text
+    else:
+        slot.warning("AI 응답이 길이 제한에 걸려 끊겼습니다. 같은 조건으로 다시 실행하면 새로 생성됩니다.")
+    slot.markdown(text)
 
 if run:
     active = {c: v for c, v in user_inputs.items() if v is not None}
@@ -511,51 +499,17 @@ if run:
         active_items = tuple(sorted(((c, k, v) for c, (k, v) in active.items()), key=lambda x: x[0]))
 
         with st.spinner("유사 사례를 찾는 중..."):
-            base_n, top = find_matches(gubun, active_items)
-
-        raw_issues = top["부적합내용"].dropna().astype(str).str.strip()
-        raw_issues = raw_issues[~raw_issues.apply(lambda x: any(k in x for k in IGNORE_KEYWORDS))]
-
-        groups = group_issues(raw_issues.tolist())             # 파이썬: 같은 뜻 묶기 + 건수 세기
-        top_groups = tuple(groups[:TOP_GROUPS])                # AI에 보낼 건수 상위 묶음
+            base_n, top_n, raw_n, groups = compute_groups(gubun, active_items)
 
         st.session_state.result = {
             "gubun": gubun,
             "base_n": base_n,
-            "top_n": len(top),
+            "top_n": top_n,
             "active_n": len(active),
-            "raw_n": len(raw_issues),
             "unique_n": len(groups),
-            "sent_n": len(top_groups),
-            "issue_n": len(groups),
+            "groups": groups[:TOP_GROUPS_SHOW],
         }
-        st.session_state.pop("analysis_result", None)
-        st.session_state.pop("recommended_questions", None)
-        st.session_state.pop("analysis_error", None)
-        st.session_state.pop("analysis_truncated", None)
-
-        if top_groups:
-            cache_key = (gubun, active_items)
-            cache = st.session_state.llm_cache
-
-            if cache_key in cache:
-                st.session_state.analysis_result, st.session_state.recommended_questions = cache[cache_key]
-            else:
-                try:
-                    with st.spinner("유사한 부적합 사항을 묶어 정리하는 중..."):
-                        main_text, questions, truncated = analyze_groups(top_groups)
-                    st.session_state.analysis_result = main_text
-                    st.session_state.recommended_questions = questions
-                    if truncated:
-                        st.session_state.analysis_truncated = True     # 잘린 결과는 캐시하지 않음
-                    else:
-                        cache[cache_key] = (main_text, questions)      # 완전한 결과만 저장
-                except gexc.ResourceExhausted:
-                    st.session_state.analysis_error = (
-                        "AI 사용량 한도에 도달했습니다. 잠시 후 다시 분석을 실행해 주세요."
-                    )
-                except Exception as e:
-                    st.session_state.analysis_error = f"AI 요약 중 오류가 발생했습니다: {e}"
+        st.session_state.ai_key = (gubun, active_items)
 
 # =====================================================================
 # 9. 분석 결과 (환영 배너와 질의응답 사이에 표시)
@@ -572,24 +526,19 @@ with result_section:
             c3.metric("입력 항목", f"{r['active_n']}개")
             st.caption(
                 f"전체 {r['base_n']:,}건 중 입력 조건과 가장 가까운 {r['top_n']:,}건을 찾았고, "
-                f"같은 뜻의 문장을 묶은 뒤 고유 부적합 {r['unique_n']:,}건 중 건수 상위 {r['sent_n']:,}건을 정리했습니다."
+                f"같은 뜻의 문장을 묶어 고유 부적합 {r['unique_n']:,}개로 정리했습니다."
             )
 
             st.warning("내용이 모호하거나 확실하지 않은 경우, 반드시 관련 안전기준 원문 항목을 직접 확인하시기 바랍니다.")
 
-            if st.session_state.get("analysis_error"):
-                st.error(st.session_state.analysis_error)
-            elif st.session_state.get("analysis_result"):
-                if st.session_state.get("analysis_truncated"):
-                    st.warning("일부 묶음의 응답이 길이 제한에 걸려 끊겼습니다. 같은 조건으로 다시 실행하면 새로 생성됩니다.")
-                st.markdown(st.session_state.analysis_result)
-            elif r["issue_n"] == 0:
-                st.info("연관 사례는 있으나 분석할 부적합 내용이 없습니다.")
+            ai_slot = st.empty()
+            render_ai_summary(ai_slot, r["groups"], st.session_state.ai_key)
 
-        if st.session_state.get("recommended_questions"):
+        if r["groups"]:
             st.markdown('<div class="kh-pill">💡 관련 추천 질문</div>', unsafe_allow_html=True)
-            q_cols = st.columns(len(st.session_state.recommended_questions))
-            for i, q in enumerate(st.session_state.recommended_questions):
+            suggestions = [f"'{rep[:30]}' 관련 안전기준은?" for rep, _ in r["groups"][:3]]
+            q_cols = st.columns(len(suggestions))
+            for i, q in enumerate(suggestions):
                 if q_cols[i].button(q, key=f"rq_{i}", use_container_width=True):
                     st.session_state.messages.append({"role": "user", "content": q})
                     st.session_state.submit_from_button = True
