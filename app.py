@@ -24,7 +24,7 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
 html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
-.block-container { padding-top: 0.6rem; padding-bottom: 2rem; max-width: 1200px; }
+.block-container { padding-top: 3.5rem; padding-bottom: 2rem; max-width: 1200px; }
 
 .kh-topbar { height: 6px; border-radius: 6px 6px 0 0;
     background: linear-gradient(90deg, #F47920 0%, #F47920 35%, #03BFD7 70%, #0A7FC1 100%); }
@@ -38,18 +38,12 @@ html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
 .kh-hero { display: flex; align-items: center; gap: 24px; margin-bottom: 22px;
     background: linear-gradient(120deg, #E6F9FC 0%, #FFF8E6 100%);
     border-radius: 18px; padding: 22px 28px; }
-.kh-hero img.char { height: 120px; }
+.kh-hero img.char { height: 130px; }
 .kh-hero h2 { margin: 0; font-size: 1.45rem; font-weight: 800; color: #0A3D62; }
 .kh-hero p { margin: 6px 0 0 0; color: #4a4a4a; font-size: 0.95rem; }
 
 .kh-section { font-size: 1.12rem; font-weight: 800; color: #0A3D62;
     border-bottom: 3px solid #03BFD7; padding-bottom: 6px; margin: 6px 0 14px 0; display: inline-block; }
-
-.kh-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px;
-    margin-top: 40px; padding: 16px 22px; background: #ffffff; border-radius: 14px;
-    border-top: 4px solid #FDB913; box-shadow: 0 -2px 10px rgba(0,0,0,.06); }
-.kh-footer img { height: 40px; }
-.kh-footer .kh-foot-text { font-size: 0.82rem; color: #6d6e71; text-align: right; line-height: 1.6; }
 
 .side-title { font-size: 1.1rem; font-weight: 800; color: #0A7FC1;
     border-left: 5px solid #FDB913; padding-left: 8px; margin: 0.4rem 0 0.5rem 0; }
@@ -83,25 +77,25 @@ def asset_path(name):
     p = os.path.join(ASSET_DIR, name)
     return p if os.path.exists(p) else None
 
+# ---- 상단 헤더 ----
 logo_uri = img_uri("koelsa_logo.png")
 logo_tag = f'<img src="{logo_uri}">' if logo_uri else ""
 st.markdown(
     '<div class="kh-topbar"></div>'
     '<div class="kh-header">' + logo_tag +
     '<div><div class="kh-title">승강기 설계심사 에이전트</div>'
-    '<div class="kh-sub">한국승강기안전공단 · 설계심사 보완사항 예측 및 기준 질의</div></div></div>',
+    '<div class="kh-sub">한국승강기안전공단 · 설계심사 부적합 사항 예측 및 안전 기준 질의</div></div></div>',
     unsafe_allow_html=True,
 )
 
-elri_uri = img_uri("elri.png")
-es_uri = img_uri("es.png")
-elri_tag = f'<img class="char" src="{elri_uri}">' if elri_uri else ""
-es_tag = f'<img class="char" src="{es_uri}">' if es_uri else ""
+# ---- 환영 배너 (환영합니다 캐릭터) ----
+hello_uri = img_uri("char_hello.png")
+hello_tag = f'<img class="char" src="{hello_uri}">' if hello_uri else ""
 st.markdown(
-    '<div class="kh-hero">' + elri_tag + es_tag +
-    '<div><h2>입력한 제원으로 보완 사항을 미리 확인하세요</h2>'
+    '<div class="kh-hero">' + hello_tag +
+    '<div><h2>입력한 제원으로 부적합 사항을 미리 확인하세요</h2>'
     '<p>왼쪽에서 승강기 유형과 제원을 고르고 <b>예측 분석 실행</b>을 누르면, '
-    '과거 개별인증 사례에서 비슷하게 나온 보완 사항을 정리해 드립니다.</p></div></div>',
+    '과거 개별인증 사례에서 비슷하게 나온 부적합 사항을 정리해 드립니다.</p></div></div>',
     unsafe_allow_html=True,
 )
 
@@ -355,10 +349,10 @@ def call_gemini(prompt, max_tokens=1500):
 def llm_analysis(issues_tuple):
     issues_text = "\n".join(f"- {txt[:200]}" for txt in issues_tuple)
     prompt = f"""
-    다음은 승강기 설계심사에서 입력 조건과 유사한 과거 개별인증 사례의 부적합(보완) 사항 목록입니다.
+    다음은 승강기 설계심사에서 입력 조건과 유사한 과거 개별인증 사례의 부적합 사항 목록입니다.
 
     목록에는 같은 내용을 다르게 표현한 문장이 많이 섞여 있습니다.
-    의미가 비슷한 보완 사항끼리 스스로 묶어서, 실제로 자주 반복되는 주요 보완 유형만 골라 정리해 주세요.
+    의미가 비슷한 부적합 사항끼리 스스로 묶어서, 실제로 자주 반복되는 주요 부적합 유형만 골라 정리해 주세요.
     억지로 개수를 맞추지 말고, 업체 고유의 내용이나 불확실한 부분은 과도하게 해석하지 마세요.
     안전기준 조항은 대분류(예: 6항)가 아닌 세부 조항(예: 6.1.2항, 8.3.2.1항)까지 최대한 구체적으로 적어 주세요.
 
@@ -414,7 +408,7 @@ if run:
 
         if issues_tuple:
             try:
-                with st.spinner("비슷한 보완 사항을 묶어 정리하는 중..."):
+                with st.spinner("비슷한 부적합 사항을 묶어 정리하는 중..."):
                     main_text, questions = llm_analysis(issues_tuple)
                 st.session_state.analysis_result = main_text
                 st.session_state.recommended_questions = questions
@@ -430,17 +424,7 @@ if run:
 # =====================================================================
 st.markdown('<div class="kh-section">🧠 예상 주요 부적합 사항</div>', unsafe_allow_html=True)
 
-if "result" not in st.session_state:
-    hello = img_uri("char_hello.png")
-    if hello:
-        st.markdown(
-            f'<div style="display:flex;align-items:center;gap:16px;"><img src="{hello}" style="height:90px;">'
-            '<span style="opacity:.8;">왼쪽에서 조건을 선택하고 분석을 실행해 주세요.</span></div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.info("왼쪽에서 조건을 선택하고 분석을 실행해 주세요.")
-else:
+if "result" in st.session_state:
     r = st.session_state.result
 
     with st.container(border=True):
@@ -522,15 +506,3 @@ if trigger:
                 st.error("AI 사용량 한도에 도달했습니다. 잠시 후 다시 질문해 주세요.")
             except Exception as e:
                 st.error(f"답변 생성 중 오류가 발생했습니다: {e}")
-
-# =====================================================================
-# 11. 하단 (승강기안전기술원)
-# =====================================================================
-inst_uri = img_uri("institute_logo.png")
-inst_tag = f'<img src="{inst_uri}">' if inst_uri else ""
-st.markdown(
-    '<div class="kh-footer">' + inst_tag +
-    '<div class="kh-foot-text"><b>승강기안전기술원</b> · 한국승강기안전공단 부속기관<br>'
-    '승강기 설계심사 보완사항 예측 에이전트</div></div>',
-    unsafe_allow_html=True,
-)
