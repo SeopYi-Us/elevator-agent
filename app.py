@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import base64
 import streamlit as st
 import pandas as pd
 import google.generativeai as genai
@@ -8,7 +9,7 @@ import PyPDF2
 from google.api_core import exceptions as gexc
 
 # =====================================================================
-# 1. 기본 설정
+# 1. 기본 설정 및 스타일
 # =====================================================================
 st.set_page_config(
     page_title="승강기 설계심사 에이전트",
@@ -17,23 +18,97 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+ASSET_DIR = "assets"
+
 st.markdown("""
 <style>
-    .block-container { padding-top: 2.2rem; padding-bottom: 3rem; }
-    .hero-title { font-size: 2rem; font-weight: 800; margin-bottom: 0.2rem; }
-    .hero-sub { font-size: 0.98rem; opacity: 0.75; margin-bottom: 1.2rem; }
-    .side-title { font-size: 1.15rem; font-weight: 800; margin: 0.2rem 0 0.6rem 0; }
-    .side-note { font-size: 0.78rem; opacity: 0.7; line-height: 1.5; margin: 0.4rem 0 0.8rem 0; }
-    div[data-testid="stExpander"] { border-radius: 12px; }
-    div[data-testid="stExpander"] summary p { font-weight: 700; }
-    button[kind="primary"] { border-radius: 10px; font-weight: 700; height: 2.8rem; }
-    div[data-testid="stMetric"] {
-        background: rgba(128,128,128,0.08);
-        border-radius: 12px;
-        padding: 0.8rem 1rem;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
+html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
+.block-container { padding-top: 0.6rem; padding-bottom: 2rem; max-width: 1200px; }
+
+.kh-topbar { height: 6px; border-radius: 6px 6px 0 0;
+    background: linear-gradient(90deg, #F47920 0%, #F47920 35%, #03BFD7 70%, #0A7FC1 100%); }
+.kh-header { display: flex; align-items: center; gap: 18px; background: #ffffff;
+    padding: 14px 22px; border-radius: 0 0 14px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.08);
+    margin-bottom: 18px; }
+.kh-header img { height: 44px; }
+.kh-header .kh-title { font-size: 1.4rem; font-weight: 800; color: #0A3D62; }
+.kh-header .kh-sub { font-size: 0.85rem; color: #6d6e71; }
+
+.kh-hero { display: flex; align-items: center; gap: 24px; margin-bottom: 22px;
+    background: linear-gradient(120deg, #E6F9FC 0%, #FFF8E6 100%);
+    border-radius: 18px; padding: 22px 28px; }
+.kh-hero img.char { height: 120px; }
+.kh-hero h2 { margin: 0; font-size: 1.45rem; font-weight: 800; color: #0A3D62; }
+.kh-hero p { margin: 6px 0 0 0; color: #4a4a4a; font-size: 0.95rem; }
+
+.kh-section { font-size: 1.12rem; font-weight: 800; color: #0A3D62;
+    border-bottom: 3px solid #03BFD7; padding-bottom: 6px; margin: 6px 0 14px 0; display: inline-block; }
+
+.kh-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    margin-top: 40px; padding: 16px 22px; background: #ffffff; border-radius: 14px;
+    border-top: 4px solid #FDB913; box-shadow: 0 -2px 10px rgba(0,0,0,.06); }
+.kh-footer img { height: 40px; }
+.kh-footer .kh-foot-text { font-size: 0.82rem; color: #6d6e71; text-align: right; line-height: 1.6; }
+
+.side-title { font-size: 1.1rem; font-weight: 800; color: #0A7FC1;
+    border-left: 5px solid #FDB913; padding-left: 8px; margin: 0.4rem 0 0.5rem 0; }
+.side-note { font-size: 0.78rem; opacity: 0.75; line-height: 1.5; margin: 0.3rem 0 0.8rem 0; }
+div[data-testid="stExpander"] { border-radius: 12px; border: 1px solid rgba(3,191,215,.35); }
+div[data-testid="stExpander"] summary p { font-weight: 700; }
+
+button[kind="primary"] { background: linear-gradient(90deg, #F47920, #FDB913) !important;
+    border: none !important; color: #ffffff !important; border-radius: 10px;
+    font-weight: 800; height: 2.8rem; }
+
+div[data-testid="stMetric"] { background: #F3FBFD; border-left: 4px solid #03BFD7;
+    border-radius: 12px; padding: 0.8rem 1rem; }
 </style>
 """, unsafe_allow_html=True)
+
+# =====================================================================
+# 2. 이미지 도우미
+# =====================================================================
+@st.cache_data(show_spinner=False)
+def img_uri(name):
+    p = os.path.join(ASSET_DIR, name)
+    if not os.path.exists(p):
+        return None
+    mime = "image/png" if p.lower().endswith(".png") else "image/jpeg"
+    with open(p, "rb") as f:
+        data = base64.b64encode(f.read()).decode()
+    return f"data:{mime};base64,{data}"
+
+def asset_path(name):
+    p = os.path.join(ASSET_DIR, name)
+    return p if os.path.exists(p) else None
+
+logo_uri = img_uri("koelsa_logo.png")
+logo_tag = f'<img src="{logo_uri}">' if logo_uri else ""
+st.markdown(
+    '<div class="kh-topbar"></div>'
+    '<div class="kh-header">' + logo_tag +
+    '<div><div class="kh-title">승강기 설계심사 에이전트</div>'
+    '<div class="kh-sub">한국승강기안전공단 · 설계심사 보완사항 예측 및 기준 질의</div></div></div>',
+    unsafe_allow_html=True,
+)
+
+elri_uri = img_uri("elri.png")
+es_uri = img_uri("es.png")
+elri_tag = f'<img class="char" src="{elri_uri}">' if elri_uri else ""
+es_tag = f'<img class="char" src="{es_uri}">' if es_uri else ""
+st.markdown(
+    '<div class="kh-hero">' + elri_tag + es_tag +
+    '<div><h2>입력한 제원으로 보완 사항을 미리 확인하세요</h2>'
+    '<p>왼쪽에서 승강기 유형과 제원을 고르고 <b>예측 분석 실행</b>을 누르면, '
+    '과거 개별인증 사례에서 비슷하게 나온 보완 사항을 정리해 드립니다.</p></div></div>',
+    unsafe_allow_html=True,
+)
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "submit_from_button" not in st.session_state:
+    st.session_state.submit_from_button = False
 
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
@@ -41,20 +116,8 @@ genai.configure(api_key=GEMINI_API_KEY)
 MODEL_NAME = "gemini-3.8-flash"  # 실제 사용 가능한 모델명인지 Google AI Studio에서 확인하세요
 model = genai.GenerativeModel(MODEL_NAME)
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "submit_from_button" not in st.session_state:
-    st.session_state.submit_from_button = False
-
-st.markdown('<div class="hero-title">🛗 승강기 설계심사 전문 에이전트</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="hero-sub">입력된 제원을 바탕으로 보완 사항을 예측하고, '
-    '안전기준에 근거한 공학적 대화를 지원합니다.</div>',
-    unsafe_allow_html=True,
-)
-
 # =====================================================================
-# 2. 기준 문서(PDF) 로드 및 조각내기
+# 3. 기준 문서(PDF) 로드 및 조각내기
 # =====================================================================
 @st.cache_resource(show_spinner=False)
 def load_pdf_chunks():
@@ -65,7 +128,6 @@ def load_pdf_chunks():
             for page in reader.pages:
                 texts.append(page.extract_text() or "")
     full = "\n".join(texts)
-    # 1200자 조각, 200자씩 겹치게 나눔
     chunks = [full[i:i + 1200] for i in range(0, len(full), 1000)]
     return [c for c in chunks if c.strip()]
 
@@ -82,7 +144,6 @@ if pdf_error:
     st.sidebar.error(pdf_error)
 
 def retrieve_chunks(query, chunks, k=5):
-    """질문과 글자 2개 조합(bigram)이 많이 겹치는 조각 k개를 고릅니다. 한글 조사에도 어느 정도 대응합니다."""
     tokens = re.findall(r"[가-힣A-Za-z0-9\.]+", query)
     grams = set()
     for t in tokens:
@@ -97,7 +158,7 @@ def retrieve_chunks(query, chunks, k=5):
     return picked or chunks[:2]
 
 # =====================================================================
-# 3. 데이터 로드
+# 4. 데이터 로드
 # =====================================================================
 DATA_FILE = "개별설계심사현황 1회차(접수일자20230701_20260630)_최종 완성 자료(마스킹 완료)_최종.csv"
 TYPES = ["일반형", "전기식 소형화물용", "경사형"]
@@ -111,7 +172,7 @@ def load_data():
 df = load_data()
 
 # =====================================================================
-# 4. 입력 항목 정의
+# 5. 입력 항목 정의
 # =====================================================================
 TOP_FIELDS = ['안전인증유형', '승강기종류', '구분1']
 
@@ -197,7 +258,7 @@ LAYOUTS = {
 }
 
 # =====================================================================
-# 5. 선택지 및 입력 파싱 유틸
+# 6. 선택지 및 입력 파싱
 # =====================================================================
 @st.cache_data
 def cat_options_all(col):
@@ -218,7 +279,7 @@ def parse_num(text):
         return False, None
 
 # =====================================================================
-# 6. 사이드바
+# 7. 사이드바 (입력)
 # =====================================================================
 btn_slot = st.sidebar.container()
 
@@ -258,18 +319,10 @@ for group_name, cols in LAYOUTS[gubun]:
 run = btn_slot.button("🔍 예측 분석 실행", type="primary", use_container_width=True)
 
 # =====================================================================
-# 7. 연관도 계산 및 부적합 예측
+# 8. 연관 사례 찾기 및 AI 요약
 # =====================================================================
-SAMPLE_N = 500        # 연관도 상위 몇 건을 집계 표본으로 쓸지 (계산만 하므로 가벼움)
-LLM_TOP_K = 50        # AI에 보낼 빈도 상위 개수
+SAMPLE_N = 200
 IGNORE_KEYWORDS = ["안내사항", "개별인증 신청 시 기술원 홈페이지", "인증 신청 시 작성하는", "최신 설계심사 목록표를 참조하여"]
-
-def normalize_text(s):
-    """띄어쓰기, 공백, 특수문자 차이를 무시해 같은 뜻의 문장을 같은 키로 만듭니다."""
-    s = str(s).strip()
-    s = re.sub(r"\s+", "", s)
-    s = re.sub(r"[^\w가-힣]", "", s)
-    return s.lower()
 
 @st.cache_data(show_spinner=False)
 def find_matches(gubun, active_items):
@@ -290,27 +343,7 @@ def find_matches(gubun, active_items):
     top = tmp.nlargest(SAMPLE_N, "유사도 점수")
     return len(base), top
 
-def summarize_issues(top):
-    """정규화 키로 묶어서 빈도를 셉니다. 보여줄 문장은 가장 많이 나온 원문을 씁니다."""
-    texts = top["부적합내용"].dropna().astype(str)
-    texts = texts[~texts.apply(lambda x: any(k in x for k in IGNORE_KEYWORDS))]
-    if texts.empty:
-        return pd.Series(dtype=int)
-
-    keys = texts.apply(normalize_text)
-    counts = keys.value_counts()
-    rep = {}
-    for k, original in zip(keys, texts):
-        rep.setdefault(k, {})
-        rep[k][original] = rep[k].get(original, 0) + 1
-
-    out = pd.Series(
-        {max(rep[k], key=rep[k].get): int(counts[k]) for k in counts.index}
-    )
-    return out.sort_values(ascending=False)
-
 def call_gemini(prompt, max_tokens=1500):
-    """한도 초과(429)면 한 번 기다렸다가 재시도합니다."""
     config = {"max_output_tokens": max_tokens, "temperature": 0.2}
     try:
         return model.generate_content(prompt, generation_config=config).text
@@ -319,19 +352,19 @@ def call_gemini(prompt, max_tokens=1500):
         return model.generate_content(prompt, generation_config=config).text
 
 @st.cache_data(show_spinner=False)
-def llm_analysis(issue_items):
-    lines = "\n".join(f"- ({cnt}건) {txt[:300]}" for txt, cnt in issue_items)
+def llm_analysis(issues_tuple):
+    issues_text = "\n".join(f"- {txt[:200]}" for txt in issues_tuple)
     prompt = f"""
-    다음은 승강기 설계심사에서 입력 조건과 유사한 사례에서 자주 나온 부적합 사항을 빈도순으로 정리한 목록입니다.
-    괄호 안 숫자는 실제 발생 건수입니다.
+    다음은 승강기 설계심사에서 입력 조건과 유사한 과거 개별인증 사례의 부적합(보완) 사항 목록입니다.
 
-    억지로 개수를 맞추지 말고, 의미 있게 반복되는 주요 부적합 유형만 골라 아래 형식을 지켜 작성해 주세요.
-    업체 고유의 내용이나 불확실한 부분은 과도하게 해석하지 말고 2~3문장 이내로 요약하세요.
+    목록에는 같은 내용을 다르게 표현한 문장이 많이 섞여 있습니다.
+    의미가 비슷한 보완 사항끼리 스스로 묶어서, 실제로 자주 반복되는 주요 보완 유형만 골라 정리해 주세요.
+    억지로 개수를 맞추지 말고, 업체 고유의 내용이나 불확실한 부분은 과도하게 해석하지 마세요.
     안전기준 조항은 대분류(예: 6항)가 아닌 세부 조항(예: 6.1.2항, 8.3.2.1항)까지 최대한 구체적으로 적어 주세요.
 
     ### [안전기준 세부 조항 번호 및 제목] 핵심 부적합 사유
     * **부적합 내용**: (객관적 요약 2~3문장)
-    * **유사 발생 건수**: 약 O건 (위 목록의 건수를 그대로 사용)
+    * **유사 발생 건수 예측**: 약 O건
     * **엔지니어링 조언**: (설계 시 확인해야 할 조언)
 
     모든 내용이 끝난 후 마지막 줄에 아래 형식으로 추천 질문 3개를 적어 주세요.
@@ -340,7 +373,7 @@ def llm_analysis(issue_items):
     [추천질문] (질문 3)
 
     부적합 목록:
-    {lines}
+    {issues_text}
     """
     text = call_gemini(prompt, max_tokens=1500)
 
@@ -364,64 +397,67 @@ if run:
         with st.spinner("유사 사례를 찾는 중..."):
             base_n, top = find_matches(gubun, active_items)
 
-        counts = summarize_issues(top)
+        issues = top["부적합내용"].dropna().astype(str).str.strip()
+        issues = issues[~issues.apply(lambda x: any(k in x for k in IGNORE_KEYWORDS))]
+        issues_tuple = tuple(issues.tolist())
 
         st.session_state.result = {
             "gubun": gubun,
             "base_n": base_n,
             "top_n": len(top),
             "active_n": len(active),
-            "counts": counts,
+            "issue_n": len(issues_tuple),
         }
         st.session_state.pop("analysis_result", None)
         st.session_state.pop("recommended_questions", None)
         st.session_state.pop("analysis_error", None)
 
-        if len(counts) > 0:
-            items = tuple((t, int(c)) for t, c in counts.head(LLM_TOP_K).items())
+        if issues_tuple:
             try:
-                with st.spinner("핵심 기준 위주로 정리하는 중..."):
-                    main_text, questions = llm_analysis(items)
+                with st.spinner("비슷한 보완 사항을 묶어 정리하는 중..."):
+                    main_text, questions = llm_analysis(issues_tuple)
                 st.session_state.analysis_result = main_text
                 st.session_state.recommended_questions = questions
             except gexc.ResourceExhausted:
                 st.session_state.analysis_error = (
-                    "AI 사용량 한도에 도달했습니다. 빈도표는 아래에서 바로 확인할 수 있고, "
-                    "AI 요약은 잠시 후 다시 시도해 주세요."
+                    "AI 사용량 한도에 도달했습니다. 잠시 후 다시 분석을 실행해 주세요."
                 )
             except Exception as e:
                 st.session_state.analysis_error = f"AI 요약 중 오류가 발생했습니다: {e}"
 
-if "result" in st.session_state:
+# =====================================================================
+# 9. 결과 표시
+# =====================================================================
+st.markdown('<div class="kh-section">🧠 예상 주요 부적합 사항</div>', unsafe_allow_html=True)
+
+if "result" not in st.session_state:
+    hello = img_uri("char_hello.png")
+    if hello:
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:16px;"><img src="{hello}" style="height:90px;">'
+            '<span style="opacity:.8;">왼쪽에서 조건을 선택하고 분석을 실행해 주세요.</span></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("왼쪽에서 조건을 선택하고 분석을 실행해 주세요.")
+else:
     r = st.session_state.result
 
     with st.container(border=True):
-        st.subheader("🧠 예상 주요 부적합 사항")
-
         c1, c2, c3 = st.columns(3)
         c1.metric("유형", r["gubun"])
         c2.metric("분석 대상", f"{r['top_n']:,}건")
         c3.metric("입력 항목", f"{r['active_n']}개")
-        st.caption(f"전체 {r['base_n']:,}건 중 입력 조건과 가장 가까운 {r['top_n']:,}건을 집계했습니다.")
-
-        counts = r["counts"]
-        if len(counts) > 0:
-            st.markdown("**빈도 상위 부적합 내용**")
-            st.dataframe(
-                pd.DataFrame({"부적합 내용": counts.index, "건수": counts.values}).head(30),
-                hide_index=True,
-                use_container_width=True,
-            )
-        else:
-            st.info("연관 사례는 있으나 분석할 부적합 내용이 없습니다.")
+        st.caption(f"전체 {r['base_n']:,}건 중 입력 조건과 가장 가까운 {r['top_n']:,}건을 분석했습니다.")
 
         st.warning("내용이 모호하거나 확실하지 않은 경우, 반드시 관련 안전기준 원문 항목을 직접 확인하시기 바랍니다.")
 
         if st.session_state.get("analysis_error"):
             st.error(st.session_state.analysis_error)
         elif st.session_state.get("analysis_result"):
-            st.markdown("**AI 요약**")
             st.markdown(st.session_state.analysis_result)
+        elif r["issue_n"] == 0:
+            st.info("연관 사례는 있으나 분석할 부적합 내용이 없습니다.")
 
     if st.session_state.get("recommended_questions"):
         st.markdown("##### 💡 관련 추천 질문")
@@ -435,13 +471,17 @@ if "result" in st.session_state:
 st.divider()
 
 # =====================================================================
-# 8. 대화형 어시스턴트
+# 10. 질의응답
 # =====================================================================
-st.subheader("💬 규정 및 공학 추론 어시스턴트")
+st.markdown('<div class="kh-section">💬 규정 및 공학 추론 질의응답</div>', unsafe_allow_html=True)
 st.caption("질문과 관련된 기준 문서 부분을 골라 답변합니다.")
 
+AI_AVATAR = asset_path("elri.png") or "🛗"
+USER_AVATAR = "🧑‍💼"
+
 for message in st.session_state.messages:
-    with st.chat_message(message["role"], avatar="🧑‍💼" if message["role"] == "user" else "🛗"):
+    avatar = USER_AVATAR if message["role"] == "user" else AI_AVATAR
+    with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
 
 prompt_input = st.chat_input("질문을 입력하세요. (예: 매다는 장치 안전율 계산 관련 안전기준을 알려줘)")
@@ -456,10 +496,10 @@ elif st.session_state.submit_from_button:
 
 if trigger:
     latest_user_msg = st.session_state.messages[-1]["content"]
-    with st.chat_message("user", avatar="🧑‍💼"):
+    with st.chat_message("user", avatar=USER_AVATAR):
         st.markdown(latest_user_msg)
 
-    with st.chat_message("assistant", avatar="🛗"):
+    with st.chat_message("assistant", avatar=AI_AVATAR):
         with st.spinner("관련 기준을 찾고 답변을 준비하는 중..."):
             related = "\n\n".join(retrieve_chunks(latest_user_msg, PDF_CHUNKS, k=5))
             system_prompt = f"""
@@ -482,3 +522,15 @@ if trigger:
                 st.error("AI 사용량 한도에 도달했습니다. 잠시 후 다시 질문해 주세요.")
             except Exception as e:
                 st.error(f"답변 생성 중 오류가 발생했습니다: {e}")
+
+# =====================================================================
+# 11. 하단 (승강기안전기술원)
+# =====================================================================
+inst_uri = img_uri("institute_logo.png")
+inst_tag = f'<img src="{inst_uri}">' if inst_uri else ""
+st.markdown(
+    '<div class="kh-footer">' + inst_tag +
+    '<div class="kh-foot-text"><b>승강기안전기술원</b> · 한국승강기안전공단 부속기관<br>'
+    '승강기 설계심사 보완사항 예측 에이전트</div></div>',
+    unsafe_allow_html=True,
+)
