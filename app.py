@@ -47,93 +47,182 @@ with st.spinner("승강기 안전기준과 설계 가이드를 백그라운드�
 st.sidebar.success("📚 기준 문서 자동 학습 완료!")
 
 # =====================================================================
-# 3. 제원 데이터 로드 및 입력 그룹 정의
+# 3. 데이터 로드
 # =====================================================================
 DATA_FILE = "개별설계심사현황 1회차(접수일자20230701_20260630)_최종 완성 자료(마스킹 완료)_최종.csv"
+TYPES = ["일반형", "전기식 소형화물용", "경사형"]
 
-# (그룹명, 시작 컬럼명, 끝 컬럼명) - 시작~끝 사이의 컬럼이 해당 그룹에 들어갑니다
-INPUT_GROUPS = [
-    ("기본 정보", "안전인증유형", "심사원"),
-    ("구동 시스템", "구동기 모델", "권부각도 α [ º ]"),
-    ("제어 시스템", "제어반 모델", "강제감속운전 (선택사양)"),
-    ("카 구조", "카 자중 [kg]", "문닫힘 안전장치"),
-    ("승강로 구조", "구동기 지지대 규격  [mm]", "균형추/평형추 주행안내 레일 브라켓 최대간격 [mm]"),
-]
-
-EXCLUDE_COLS = ['접수일자', '접수번호', '부적합내용', '비고', '항목별 제출서류', '항목',
-                'Unnamed: 79', '신청업체', '모델']
-
-@st.cache_data
+@st.cache_resource
 def load_data():
     df = pd.read_csv(DATA_FILE, low_memory=False)
-    # '로프'를 '와이어로프'로 묶어주는 처리
     df['매다는 장치 [종류]'] = df['매다는 장치 [종류]'].replace('로프', '와이어로프')
     return df
 
-@st.cache_data
-def get_options(df):
-    """각 컬럼의 선택지를 한 번만 계산해 두어 재실행 시 속도를 높입니다."""
-    return {col: sorted(df[col].dropna().astype(str).unique().tolist()) for col in df.columns}
-
 df = load_data()
-options_map = get_options(df)
-
-input_cols = [col for col in df.columns if col not in EXCLUDE_COLS and options_map.get(col)]
-
-def get_group_cols(start, end):
-    """시작 컬럼~끝 컬럼 사이의 컬럼 목록을 반환합니다 (입력 대상만)."""
-    start_idx = df.columns.get_loc(start)
-    end_idx = df.columns.get_loc(end)
-    return [c for c in df.columns[start_idx:end_idx + 1] if c in input_cols]
-
-# 그룹에 할당된 컬럼 집합 (나머지는 '기타'로 묶음)
-grouped_cols = set()
-resolved_groups = []
-for group_name, start, end in INPUT_GROUPS:
-    cols = get_group_cols(start, end)
-    grouped_cols.update(cols)
-    resolved_groups.append((group_name, cols))
-
-other_cols = [c for c in input_cols if c not in grouped_cols]
-if other_cols:
-    resolved_groups.append(("기타", other_cols))
 
 # =====================================================================
-# 4. 사이드바: 예측 버튼을 상단에 배치 + 그룹별 접이식 제원 입력
+# 4. 입력 항목 정의 (유형별, 이미지 순서 기준)
+# =====================================================================
+# 숫자로 직접 입력받는 항목 (드롭다운 없음)
+NUMERIC_COLS = [
+    '구동기 용량 [kW]', '정격하중 [kg]', '견인하중 [kg]', '정원 [인승]', '정격속도 [m/s]',
+    '최대 운행거리 [m]', '매다는 장치 직경 [mm, (호)]', '매다는 장치 [가닥]', '주 도르래 직경 [mm]',
+    '권부각도 α [ º ]', '인버터 용량 [kW]', '카 자중 [kg]', '카 내부(폭) 크기 [m]',
+    '카 내부(깊이) 크기 [m]', '카 출입구(폭) 크기  [m]', '카 출입구(높이) 크기  [m]',
+    '승강장 출입구(폭) 크기  [m]', '승강장 출입구(높이) 크기  [m]', '균형추/평형추 총하중 [kg]',
+    '균형추/평형추 도르래 직경 [mm]', '매다는 장치 파단하중 [kN]', '과속조절기 로프 직경  [mm]',
+    '과속조절기 도르래 직경  [mm]', '카 주행안내 레일 브라켓 최대간격 [mm]',
+    '균형추/평형추 주행안내 레일 브라켓 최대간격 [mm]',
+]
+
+BASIC = ['안전인증유형', '승강기종류', '구분1', '신청자명', '제조업체', '업체구분',
+         '모델명', '현장명', '심사원']
+
+# ---- 일반형 (기존 그룹에서 기타 3개 제외) ----
+DRIVE_GEN = ['구동기 모델', '구동기 용량 [kW]', '브레이크 모델', '정격하중 [kg]', '견인하중 [kg]',
+             '정원 [인승]', '정격속도 [m/s]', '최대 운행거리 [m]', '매다는 장치 [종류]',
+             '매다는 장치 직경 [mm, (호)]', '매다는 장치 [가닥]', '보상수단 [종류] (선택사양)',
+             '로핑방식', '로핑 구조', '주 도르래 직경 [mm]', '권부각도 α [ º ]', '주 도르래 형상']
+CTRL_GEN = ['제어반 모델', '주 전원 [V]', '카 조명 전원 [V]', '회생전력 처리 형식', '인버터 용량 [kW]',
+            '안전회로 전원 [V]', '제어회로 전원 [V]', '개문 착상 운전 (선택사양)',
+            '개문 재착상 운전 (선택사양)', '주제어 기판', 'UCMP 감지부 모델', 'UCMP 제어부 모델',
+            'UCMP 정지부 모델', '안전회로기판 모델', '구출운전방식', '강제감속운전 (선택사양)']
+CAR_GEN = ['카 자중 [kg]', '카 내부(폭) 크기 [m]', '카 내부(깊이) 크기 [m]', '카 출입구(폭) 크기  [m]',
+           '카 출입구(높이) 크기  [m]', '승강장 출입구(폭) 크기  [m]', '승강장 출입구(높이) 크기  [m]',
+           '출입문 형식', '2개 이상의 카 출입문 (선택사양)', '문 개폐방식', '카 문 잠금장치 (선택사양)',
+           '문닫힘 안전장치']
+HOIST_GEN = ['구동기 지지대 규격  [mm]', '오버밸런스율 [%]', '균형추/평형추 총하중 [kg]',
+             '균형추/평형추 도르래 직경 [mm]', '균형추 추락방지안전장치 (선택사양)',
+             '매다는 장치 체결방식(카)', '매다는 장치 체결방식(균형추/평형추)', '매다는 장치 파단하중 [kN]',
+             '과부하감지장치 종류(선택사양)', '과부하감지장치 위치 (선택사양)',
+             '과속조절기 로프 직경  [mm]', '과속조절기 도르래 직경  [mm]',
+             '카 주행안내 레일 규격 [K, (T)]', '균형추/평형추 주행안내 레일 규격  [K, (T)]',
+             '카 주행안내 레일 브라켓 최대간격 [mm]', '균형추/평형추 주행안내 레일 브라켓 최대간격 [mm]']
+
+# ---- 전기식 소형화물용 (이미지 1~7) ----
+DRIVE_SMALL = ['구동기 모델', '구동기 용량 [kW]', '브레이크 모델', '정격하중 [kg]', '견인하중 [kg]',
+               '정격속도 [m/s]', '최대 운행거리 [m]', '매다는 장치 [종류]', '매다는 장치 직경 [mm, (호)]',
+               '매다는 장치 [가닥]', '로핑방식', '로핑 구조', '주 도르래 직경 [mm]', '권부각도 α [ º ]',
+               '주 도르래 형상']
+CTRL_SMALL = ['제어반 모델', '주 전원 [V]', '카 조명 전원 [V]', '회생전력 처리 형식', '인버터 용량 [kW]',
+              '안전회로 전원 [V]', '제어회로 전원 [V]', '개문 착상 운전 (선택사양)',
+              '개문 재착상 운전 (선택사양)', '주제어 기판', 'UCMP 감지부 모델', 'UCMP 제어부 모델',
+              'UCMP 정지부 모델', '안전회로기판 모델', '비상 운전방식']
+
+# ---- 경사형 (이미지 8~14) ----
+DRIVE_SLOPE = ['구동기 모델', '구동기 용량 [kW]', '브레이크 모델', '정격하중 [kg]', '견인하중 [kg]',
+               '정원 [인승]', '최대 경사각도 [ º ]', '정격속도 [m/s]', '최대 운행거리 [m]',
+               '매다는 장치 [종류]', '매다는 장치 직경 [mm, (호)]', '매다는 장치 [가닥]',
+               '보상수단 [종류] (선택사양)', '로핑방식', '로핑 구조', '주 도르래 직경 [mm]',
+               '권부각도 α [ º ]', '주 도르래 형상']
+CTRL_SLOPE = ['제어반 모델', '주 전원 [V]', '카 조명 전원 [V]', '회생전력 처리 형식', '인버터 용량 [kW]',
+              '안전회로 전원 [V]', '제어회로 전원 [V]', '개문 착상 운전 (선택사양)',
+              '개문 재착상 운전 (선택사양)', '주제어 기판', 'UCMP 감지부 모델', 'UCMP 정지부 모델',
+              'UCMP 제어부 모델', '안전회로기판 모델', '구출운전방식']
+CAR_SLOPE = CAR_GEN + ['과부하감지장치 종류(선택사양)']
+HOIST_SLOPE = ['구동기 지지대 규격  [mm]', '오버밸런스율 [%]', '균형추/평형추 총하중 [kg]',
+               '균형추/평형추 도르래 직경 [mm]', '매다는 장치 체결방식(카)',
+               '매다는 장치 체결방식(균형추/평형추)', '매다는 장치 파단하중 [kN]',
+               '과부하감지장치 위치 (선택사양)', '과속조절기 로프 직경  [mm]',
+               '과속조절기 도르래 직경  [mm]', '카 주행안내 레일 규격 [K, (T)]',
+               '균형추/평형추 주행안내 레일 규격  [K, (T)]', '주행트랙/주행안내 레일 간격 [mm]',
+               '카 주행안내 레일 브라켓 최대간격 [mm]', '균형추/평형추 주행안내 레일 브라켓 최대간격 [mm]']
+
+LAYOUTS = {
+    "일반형": [
+        ("구동 시스템", DRIVE_GEN),
+        ("제어 시스템", CTRL_GEN),
+        ("카 구조", CAR_GEN),
+        ("승강로 구조", HOIST_GEN),
+    ],
+    "전기식 소형화물용": [
+        ("구동 시스템", DRIVE_SMALL),
+        ("제어 시스템", CTRL_SMALL),
+        ("카 구조", CAR_GEN),
+        ("승강로 구조", HOIST_GEN),
+    ],
+    "경사형": [
+        ("구동 시스템", DRIVE_SLOPE),
+        ("제어 시스템", CTRL_SLOPE),
+        ("카 구조", CAR_SLOPE),
+        ("승강로 구조", HOIST_SLOPE),
+    ],
+}
+
+# =====================================================================
+# 5. 선택지 생성 (유형별 데이터 기준, 캐시)
+# =====================================================================
+@st.cache_data
+def cat_options(gubun, col):
+    sub = df[df["구분2"].astype(str) == gubun]
+    return sorted(sub[col].dropna().astype(str).unique().tolist())
+
+# =====================================================================
+# 6. 사이드바: 유형 선택 → 버튼 → 그룹별 입력
 # =====================================================================
 st.sidebar.header("📋 세부 제원 입력")
 
-# 버튼 자리를 먼저 확보해 두면, 아래에서 입력을 다 받아도 버튼은 위쪽에 그려집니다
+gubun = st.sidebar.selectbox("구분2 (승강기 유형)", TYPES, index=0, key="gubun")
+
 btn_slot = st.sidebar.container()
-st.sidebar.caption("그룹을 펼쳐서 제원을 선택하세요. '선택 안 함'은 조건에서 제외됩니다.")
+st.sidebar.caption("'선택 안 함'은 조건에서 제외됩니다. 숫자 항목은 값을 입력한 것만 반영됩니다.")
 
 user_inputs = {}
-for group_name, cols in resolved_groups:
-    with st.sidebar.expander(f"{group_name} ({len(cols)})", expanded=(group_name == "기본 정보")):
+
+# 기본 정보 (유형 공통)
+with st.sidebar.expander(f"기본 정보 ({len(BASIC)})", expanded=True):
+    for col in BASIC:
+        opts = cat_options(gubun, col)
+        choice = st.selectbox(col, ["선택 안 함"] + opts, key=f"cat|{gubun}|{col}")
+        user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
+
+# 유형별 그룹
+for group_name, cols in LAYOUTS[gubun]:
+    with st.sidebar.expander(f"{group_name} ({len(cols)})", expanded=False):
         for col in cols:
-            options = ["선택 안 함"] + options_map[col]
-            user_inputs[col] = st.selectbox(col, options, key=f"sel_{col}")
+            if col in NUMERIC_COLS:
+                num = st.number_input(col, value=None, key=f"num|{gubun}|{col}")
+                user_inputs[col] = ("num", float(num)) if num is not None else None
+            else:
+                opts = cat_options(gubun, col)
+                choice = st.selectbox(col, ["선택 안 함"] + opts, key=f"cat|{gubun}|{col}")
+                user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
 
 run = btn_slot.button("예측 분석 실행", type="primary", use_container_width=True)
 
 # =====================================================================
-# 5. 부적합 예측 및 의미 기반 분석
+# 7. 연관도 계산 및 부적합 예측
 # =====================================================================
+TOP_N = 200
+
 if run:
-    result_df = df.copy()
-    result_df['유사도 점수'] = 0
+    active = {c: v for c, v in user_inputs.items() if v is not None}
+    base = df[df["구분2"].astype(str) == gubun]
 
-    for col, selected_val in user_inputs.items():
-        if selected_val != "선택 안 함":
-            result_df.loc[result_df[col].astype(str) == selected_val, '유사도 점수'] += 1
-
-    top_matches = result_df[result_df['유사도 점수'] > 0].sort_values(by='유사도 점수', ascending=False)
-
-    if len(top_matches) == 0:
-        st.session_state.pop("analysis_result", None)
-        st.session_state.pop("recommended_questions", None)
-        st.warning("일치하는 과거 데이터가 없습니다.")
+    if not active:
+        st.warning("제원을 하나 이상 선택하거나 입력해 주세요.")
+    elif base.empty:
+        st.warning(f"'{gubun}' 유형의 과거 데이터가 없습니다.")
     else:
+        result_df = base.copy()
+        result_df['유사도 점수'] = 0.0
+
+        for col, (kind, val) in active.items():
+            if kind == "cat":
+                # 범주형: 정확히 일치하면 1점
+                result_df.loc[result_df[col].astype(str) == val, '유사도 점수'] += 1
+            else:
+                # 숫자형: 입력값과 가까울수록 1점에 가깝게 (범위 기준 정규화)
+                vals = pd.to_numeric(result_df[col], errors='coerce')
+                rng = vals.max() - vals.min()
+                if pd.isna(rng) or rng == 0:
+                    rng = 1.0
+                closeness = 1 - ((vals - val).abs() / rng).clip(0, 1)
+                result_df['유사도 점수'] += closeness.fillna(0)
+
+        top_matches = result_df.sort_values(by='유사도 점수', ascending=False).head(TOP_N)
+        st.caption(f"'{gubun}' 데이터 {len(base):,}건 중 연관도 상위 {len(top_matches)}건으로 분석했습니다.")
+
         issues = top_matches['부적합내용'].dropna().tolist()
         ignore_keywords = ["안내사항", "개별인증 신청 시 기술원 홈페이지", "인증 신청 시 작성하는", "최신 설계심사 목록표를 참조하여"]
         filtered_issues = [str(i) for i in issues if not any(k in str(i) for k in ignore_keywords)]
@@ -172,9 +261,11 @@ if run:
                 st.session_state.analysis_result = '\n'.join(main_content)
                 st.session_state.recommended_questions = recommended_questions
         else:
-            st.info("일치하는 데이터는 있으나 분석할 부적합 내용이 없습니다.")
+            st.session_state.pop("analysis_result", None)
+            st.session_state.pop("recommended_questions", None)
+            st.info("연관 데이터는 있으나 분석할 부적합 내용이 없습니다.")
 
-# 분석 결과 출력 (세션에 저장된 값 사용 - 버튼을 다시 눌러도 유지됨)
+# 분석 결과 출력 (세션 저장값 사용 - 추천 질문 버튼을 눌러도 유지)
 if "analysis_result" in st.session_state:
     st.subheader("🧠 예상 주요 부적합 사항 (의미 기반 분석)")
     st.markdown("### ⚠️ 주의: 내용이 모호하거나 확실하지 않은 경우, 반드시 관련 안전기준 원문 항목을 직접 확인하시기 바랍니다.")
@@ -192,7 +283,7 @@ if "analysis_result" in st.session_state:
 st.divider()
 
 # =====================================================================
-# 6. 대화형 어시스턴트
+# 8. 대화형 어시스턴트
 # =====================================================================
 st.subheader("💬 설계심사 규정 및 공학 추론 어시스턴트")
 
