@@ -145,8 +145,8 @@ genai.configure(api_key=GEMINI_API_KEY)
 MODEL_NAME = "gemini-3.5-flash-lite"
 model = genai.GenerativeModel(MODEL_NAME)
 
-AI_TIMEOUT = 45            # AI 응답을 이 시간(초) 안에 받지 못하면 중단
-SUMMARY_MAX_TOKENS = 1200  # 요약 출력 상한 (짧게 유지해서 빠르게)
+AI_TIMEOUT = 60            # AI 응답 제한 시간(초). 내용이 풍성해져서 여유를 조금 늘렸습니다.
+SUMMARY_MAX_TOKENS = 2500  # 요약과 추천 질문을 함께 담을 출력 상한
 CHAT_MAX_TOKENS = 3000     # 질의응답 출력 상한
 
 # =====================================================================
@@ -352,11 +352,11 @@ for group_name, cols in LAYOUTS[gubun]:
 run = btn_slot.button("🔍 예측 분석 실행", type="primary", use_container_width=True)
 
 # =====================================================================
-# 8. 파이썬 계산 (묶기·세기, AI 없음) + AI 요약 1회
+# 8. 파이썬 계산 (묶기·세기) + AI 요약 1회 (추천 질문 포함)
 # =====================================================================
 SAMPLE_N = 200            # 연관도 상위 몇 건을 볼지
 TOP_GROUPS_SHOW = 10      # 파이썬으로 계산해 보여줄 묶음 수
-AI_TOP_K = 8              # AI 요약에 보낼 상위 묶음 수 (요청은 1번만)
+AI_TOP_K = 10             # AI 요약에 보낼 상위 묶음 수 (요청은 1번만)
 IGNORE_KEYWORDS = ["안내사항", "개별인증 신청 시 기술원 홈페이지", "인증 신청 시 작성하는", "최신 설계심사 목록표를 참조하여"]
 
 @st.cache_data(show_spinner=False)
@@ -436,57 +436,80 @@ def call_gemini(prompt, max_tokens):
     return get_text(resp), not is_truncated(resp)
 
 def build_summary_prompt(groups):
-    lines = "\n".join(f"- ({cnt}건) {txt[:150]}" for txt, cnt in groups[:AI_TOP_K])
+    lines = "\n".join(f"- ({cnt}건) {txt[:200]}" for txt, cnt in groups[:AI_TOP_K])
     return f"""
     다음은 승강기 설계심사에서 자주 나온 부적합 사항 묶음 목록입니다. 괄호 안 숫자는 실제 건수입니다.
 
-    의미 있는 부적합 유형을 최대 5개까지만 골라 아래 형식으로 짧게 작성해 주세요.
-    항목당 설명은 짧게 쓰고, 억지로 개수를 맞추지 마세요.
+    의미 있는 부적합 유형을 최대 5개까지 골라 아래 형식으로 작성해 주세요.
+    억지로 개수를 맞추지 말고, 목록에 없는 내용은 지어내지 마세요.
+    - 부적합 내용: 어떤 설계서·도면·계산서가 빠졌거나 어떤 값이 기준과 맞지 않는지 2~3문장으로 구체적으로 설명하세요.
+    - 엔지니어링 조언: 설계 단계에서 무엇을 어떤 기준으로 확인하고, 도면이나 계산서에 무엇을 반영해야 하는지 2~3문장으로 구체적으로 쓰세요.
 
     ### [안전기준 세부 조항 번호 및 제목] 핵심 부적합 사유
-    * **부적합 내용**: (1문장)
-    * **유사 발생 건수**: 약 O건
-    * **엔지니어링 조언**: (1문장)
+    * **부적합 내용**: (2~3문장)
+    * **유사 발생 건수**: 약 O건 (관련 묶음 건수의 합계)
+    * **엔지니어링 조언**: (2~3문장)
+
+    모든 항목을 쓴 뒤, 마지막 줄부터 아래 형식의 줄 3개만 덧붙이세요.
+    질문은 위에서 쓴 부적합 유형의 원인, 확인 기준, 계산 방법을 묻는 자연스러운 한국어 질문이어야 합니다.
+    페이지 번호나 원문 문장을 그대로 넣지 마세요.
+    [추천질문] (질문 1)
+    [추천질문] (질문 2)
+    [추천질문] (질문 3)
 
     목록:
     {lines}
     """
 
+def split_questions(raw):
+    """본문과 추천 질문을 분리합니다."""
+    body, questions = [], []
+    for line in raw.split("\n"):
+        if line.strip().startswith("[추천질문]"):
+            q = line.strip().replace("[추천질문]", "").strip()
+            if q:
+                questions.append(q)
+        else:
+            body.append(line)
+    return "\n".join(body).strip(), questions[:3]
+
 def render_ai_summary(slot, groups, key):
-    """AI 요약은 조건당 한 번만 호출하고, 결과는 캐시에 저장합니다."""
+    """AI 요약과 추천 질문을 조건당 한 번만 만들고 캐시에 저장합니다. 추천 질문 목록을 반환합니다."""
     cache = st.session_state.llm_cache
 
     if not groups:
         slot.info("연관 사례는 있으나 분석할 부적합 내용이 없습니다.")
-        return
+        return []
     if key in cache:
-        slot.markdown(cache[key])
-        return
+        slot.markdown(cache[key]["text"])
+        return cache[key]["questions"]
     if st.session_state.get("ai_error_key") == key:
         slot.error(st.session_state.ai_error_msg)
-        return
+        return []
 
     with slot:
-        with st.spinner("AI 요약 작성 중... (최대 45초)"):
+        with st.spinner(f"AI 요약 작성 중... (최대 {AI_TIMEOUT}초)"):
             try:
-                text, complete = call_gemini(build_summary_prompt(groups), max_tokens=SUMMARY_MAX_TOKENS)
+                raw, complete = call_gemini(build_summary_prompt(groups), max_tokens=SUMMARY_MAX_TOKENS)
                 st.session_state.pop("ai_error_key", None)
             except gexc.ResourceExhausted:
                 st.session_state.ai_error_key = key
                 st.session_state.ai_error_msg = "AI 사용량 한도에 도달했습니다. 잠시 후 다시 실행해 주세요."
                 slot.error(st.session_state.ai_error_msg)
-                return
+                return []
             except Exception as e:
                 st.session_state.ai_error_key = key
                 st.session_state.ai_error_msg = f"AI 요약이 완료되지 않았습니다(시간 초과 또는 오류): {e}"
                 slot.error(st.session_state.ai_error_msg)
-                return
+                return []
 
+    text, questions = split_questions(raw)
     if complete:
-        cache[key] = text
+        cache[key] = {"text": text, "questions": questions}
     else:
         slot.warning("AI 응답이 길이 제한에 걸려 끊겼습니다. 같은 조건으로 다시 실행하면 새로 생성됩니다.")
     slot.markdown(text)
+    return questions
 
 if run:
     active = {c: v for c, v in user_inputs.items() if v is not None}
@@ -501,7 +524,7 @@ if run:
         with st.spinner("유사 사례를 찾는 중..."):
             base_n, top_n, raw_n, groups = compute_groups(gubun, active_items)
 
-        # 먼저 ai_key를 저장한 뒤 result를 저장합니다 (중간에 끊겨도 짝이 맞도록)
+        # 먼저 ai_key를 저장한 뒤 result를 저장합니다
         st.session_state.ai_key = (gubun, active_items)
         st.session_state.result = {
             "gubun": gubun,
@@ -510,6 +533,7 @@ if run:
             "active_n": len(active),
             "unique_n": len(groups),
             "groups": groups[:TOP_GROUPS_SHOW],
+            "ai_groups": groups[:AI_TOP_K],
         }
 
 # =====================================================================
@@ -537,14 +561,14 @@ with result_section:
             if ai_key is None:
                 st.session_state.pop("result", None)
                 st.info("결과가 중간에 끊겼습니다. 예측 분석 실행을 다시 눌러 주세요.")
+                questions = []
             else:
-                render_ai_summary(ai_slot, r["groups"], ai_key)
+                questions = render_ai_summary(ai_slot, r["ai_groups"], ai_key)
 
-        if "result" in st.session_state and st.session_state.result["groups"]:
+        if questions:
             st.markdown('<div class="kh-pill">💡 관련 추천 질문</div>', unsafe_allow_html=True)
-            suggestions = [f"'{rep[:30]}' 관련 안전기준은?" for rep, _ in st.session_state.result["groups"][:3]]
-            q_cols = st.columns(len(suggestions))
-            for i, q in enumerate(suggestions):
+            q_cols = st.columns(len(questions))
+            for i, q in enumerate(questions):
                 if q_cols[i].button(q, key=f"rq_{i}", use_container_width=True):
                     st.session_state.messages.append({"role": "user", "content": q})
                     st.session_state.submit_from_button = True
