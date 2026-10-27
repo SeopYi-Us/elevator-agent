@@ -145,7 +145,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 MODEL_NAME = "gemini-3.5-flash-lite"
 model = genai.GenerativeModel(MODEL_NAME)
 
-AI_TIMEOUT = 120             # AI 응답 제한 시간(초). 묶기를 AI가 맡으므로 여유를 둡니다.
+AI_TIMEOUT = 120             # AI 응답 제한 시간(초)
 ANALYSIS_MAX_TOKENS = 4096   # 묶음 요약 + 추천 질문을 담는 출력 상한
 CHAT_MAX_TOKENS = 3000       # 질의응답 출력 상한
 
@@ -352,10 +352,11 @@ for group_name, cols in LAYOUTS[gubun]:
 run = btn_slot.button("🔍 예측 분석 실행", type="primary", use_container_width=True)
 
 # =====================================================================
-# 8. 연관 사례 찾기 + 중복 정리(파이썬) + AI 묶기·요약 1회
+# 8. 연관 사례 찾기 + 중복 정리(파이썬) + 기준 원문 검색 + AI 묶기·요약 1회
 # =====================================================================
 SAMPLE_N = 200            # 연관도 상위 몇 건을 볼지
-SEND_N = 150              # AI에 보낼 고유 문장 최대 개수 (AI가 여기서 묶음을 만듭니다)
+SEND_N = 150              # AI에 보낼 고유 문장 최대 개수
+REF_K = 8                 # 안전기준 원문에서 가져올 조각 수
 IGNORE_KEYWORDS = ["안내사항", "개별인증 신청 시 기술원 홈페이지", "인증 신청 시 작성하는", "최신 설계심사 목록표를 참조하여"]
 
 @st.cache_data(show_spinner=False)
@@ -434,18 +435,33 @@ def call_gemini(prompt, max_tokens):
     )
     return get_text(resp), not is_truncated(resp)
 
-def build_analysis_prompt(uniq_items):
+def build_reference(uniq_items):
+    """부적합 문장의 핵심 단어로 안전기준 원문 조각을 찾아 하나의 텍스트로 만듭니다."""
+    if not PDF_CHUNKS:
+        return ""
+    query = " ".join(txt for txt, _ in uniq_items[:15])
+    picked = retrieve_chunks(query, PDF_CHUNKS, k=REF_K)
+    return "\n\n---\n\n".join(picked)
+
+def build_analysis_prompt(uniq_items, reference):
     lines = "\n".join(f"- ({cnt}건) {txt[:200]}" for txt, cnt in uniq_items[:SEND_N])
     return f"""
     다음은 승강기 설계심사에서 입력 조건과 유사한 과거 개별인증 사례의 부적합 사항 목록입니다.
     괄호 안 숫자는 같은 문장이 나온 건수입니다. 표현만 다르고 뜻이 같은 문장끼리는 스스로 한 묶음으로 합치고, 그 묶음의 건수를 모두 더해 주세요.
 
+    [참고 안전기준 원문]
+    아래 원문은 안전기준과 설계심사 가이드에서 찾은 발췌입니다. 조항 번호와 제목은 반드시 이 원문에 실제로 적혀 있는 것만 사용하세요.
+    원문에서 해당 조항을 확인할 수 없으면 조항 번호 자리에 "조항 확인 필요"라고만 쓰고, 번호를 지어내지 마세요.
+
+    {reference}
+
     합쳐진 묶음 중에서 실제로 자주 반복되는 주요 부적합 유형을 최대 5개까지 골라 아래 형식으로 작성해 주세요.
+    헤더의 대괄호 안에는 실제 조항 번호와 제목을 넣으세요. 예: 6.1.2 카 주행안내 레일 브라켓 최대간격
     억지로 개수를 맞추지 말고, 목록에 없는 내용은 지어내지 마세요.
     - 부적합 내용: 어떤 설계서·도면·계산서가 빠졌거나 어떤 값이 기준과 맞지 않는지 2~3문장으로 구체적으로 설명하세요.
     - 엔지니어링 조언: 설계 단계에서 무엇을 어떤 기준으로 확인하고, 도면이나 계산서에 무엇을 반영해야 하는지 2~3문장으로 구체적으로 쓰세요.
 
-    ### [안전기준 세부 조항 번호 및 제목] 핵심 부적합 사유
+    ### [조항 번호 제목] 핵심 부적합 사유
     * **부적합 내용**: (2~3문장)
     * **유사 발생 건수**: 약 O건 (합쳐진 묶음의 건수 합계)
     * **엔지니어링 조언**: (2~3문장)
@@ -487,9 +503,13 @@ def render_ai_analysis(slot, uniq_items, key):
         return []
 
     with slot:
-        with st.spinner(f"AI가 유사 항목을 묶어 정리하는 중... (최대 {AI_TIMEOUT}초)"):
+        with st.spinner(f"기준 원문을 찾고 AI가 유사 항목을 정리하는 중... (최대 {AI_TIMEOUT}초)"):
             try:
-                raw, complete = call_gemini(build_analysis_prompt(uniq_items), max_tokens=ANALYSIS_MAX_TOKENS)
+                reference = build_reference(uniq_items)
+                raw, complete = call_gemini(
+                    build_analysis_prompt(uniq_items, reference),
+                    max_tokens=ANALYSIS_MAX_TOKENS,
+                )
                 st.session_state.pop("ai_error_key", None)
             except gexc.ResourceExhausted:
                 st.session_state.ai_error_key = key
