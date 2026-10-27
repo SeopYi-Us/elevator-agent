@@ -24,7 +24,7 @@ st.title("🔍 승강기 설계심사 전문 에이전트")
 st.markdown("입력된 제원을 바탕으로 보완 사항을 예측하고, 안전기준에 근거한 공학적 대화를 지원합니다.")
 
 # =====================================================================
-# 2. PDF 규정/가이드라인 자동 학습
+# 2. PDF 규정/가이드라인 자동 학습 (문제가 있을 때만 알림 표시)
 # =====================================================================
 @st.cache_data(show_spinner=False)
 def load_pdf_knowledge():
@@ -40,11 +40,20 @@ def load_pdf_knowledge():
                     extracted_text += text + "\n"
     return extracted_text
 
-with st.spinner("승강기 안전기준과 설계 가이드를 백그라운드에서 학습 중입니다..."):
-    if "pdf_context" not in st.session_state:
-        st.session_state.pdf_context = load_pdf_knowledge()
+if "pdf_context" not in st.session_state:
+    with st.spinner("승강기 안전기준과 설계 가이드를 백그라운드에서 학습 중입니다..."):
+        try:
+            st.session_state.pdf_context = load_pdf_knowledge()
+            st.session_state.pdf_error = None
+            if not st.session_state.pdf_context.strip():
+                st.session_state.pdf_error = "기준 문서(PDF)에서 읽어 온 내용이 없습니다. 파일 위치를 확인해 주세요."
+        except Exception as e:
+            st.session_state.pdf_context = ""
+            st.session_state.pdf_error = f"기준 문서 학습 중 오류가 발생했습니다: {e}"
 
-st.sidebar.success("📚 기준 문서 자동 학습 완료!")
+# 문제가 있을 때만 표시
+if st.session_state.get("pdf_error"):
+    st.sidebar.error(f"📚 {st.session_state.pdf_error}")
 
 # =====================================================================
 # 3. 데이터 로드
@@ -63,7 +72,7 @@ df = load_data()
 # =====================================================================
 # 4. 입력 항목 정의
 # =====================================================================
-# 사이드바 최상단에 고정으로 올리는 항목 (순서 중요)
+# 사이드바 상단에 올리는 항목 (순서 중요)
 TOP_FIELDS = ['안전인증유형', '승강기종류', '구분1']
 
 # 숫자로 직접 입력받는 항목
@@ -78,7 +87,7 @@ NUMERIC_COLS = [
     '균형추/평형추 주행안내 레일 브라켓 최대간격 [mm]',
 ]
 
-# 기본 정보 중 최상단으로 올리지 않은 나머지
+# 기본 정보 중 상단으로 올리지 않은 나머지
 BASIC_REST = ['신청자명', '제조업체', '업체구분', '모델명', '현장명', '심사원']
 
 # ---- 일반형 ----
@@ -185,18 +194,18 @@ def parse_num(text):
 # =====================================================================
 st.sidebar.header("📋 세부 제원 입력")
 
+# (1) 예측 분석 버튼: 가장 상단에 자리를 먼저 확보
+btn_slot = st.sidebar.container()
+st.sidebar.caption("'선택 안 함'은 조건에서 제외됩니다. 숫자 항목은 입력한 값 그대로 사용되며, 비워 두면 제외됩니다.")
+
 user_inputs = {}
 
-# (1) 최상단 고정 항목: 안전인증유형 → 승강기종류 → 구분1 → 구분2
+# (2) 최상단 고정 항목: 안전인증유형 → 승강기종류 → 구분1 → 구분2
 for col in TOP_FIELDS:
     choice = st.sidebar.selectbox(col, ["선택 안 함"] + cat_options_all(col), key=f"top|{col}")
     user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
 
 gubun = st.sidebar.selectbox("구분2 (승강기 유형)", TYPES, index=0, key="gubun")
-
-# (2) 예측 버튼 자리
-btn_slot = st.sidebar.container()
-st.sidebar.caption("'선택 안 함'은 조건에서 제외됩니다. 숫자 항목은 입력한 값 그대로 사용되며, 비워 두면 제외됩니다.")
 
 # (3) 나머지 기본 정보
 with st.sidebar.expander(f"기본 정보 ({len(BASIC_REST)})", expanded=True):
@@ -222,6 +231,7 @@ for group_name, cols in LAYOUTS[gubun]:
                 choice = st.selectbox(col, ["선택 안 함"] + cat_options(gubun, col), key=f"cat|{gubun}|{col}")
                 user_inputs[col] = ("cat", choice) if choice != "선택 안 함" else None
 
+# 버튼은 위에서 만든 자리에 그려지므로 화면 최상단에 나타납니다
 run = btn_slot.button("예측 분석 실행", type="primary", use_container_width=True)
 
 # =====================================================================
