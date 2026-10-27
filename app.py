@@ -145,9 +145,9 @@ genai.configure(api_key=GEMINI_API_KEY)
 MODEL_NAME = "gemini-3.5-flash-lite"
 model = genai.GenerativeModel(MODEL_NAME)
 
-AI_TIMEOUT = 60            # AI 응답 제한 시간(초). 내용이 풍성해져서 여유를 조금 늘렸습니다.
-SUMMARY_MAX_TOKENS = 2500  # 요약과 추천 질문을 함께 담을 출력 상한
-CHAT_MAX_TOKENS = 3000     # 질의응답 출력 상한
+AI_TIMEOUT = 120             # AI 응답 제한 시간(초). 묶기를 AI가 맡으므로 여유를 둡니다.
+ANALYSIS_MAX_TOKENS = 4096   # 묶음 요약 + 추천 질문을 담는 출력 상한
+CHAT_MAX_TOKENS = 3000       # 질의응답 출력 상한
 
 # =====================================================================
 # 3. 기준 문서(PDF) 로드 및 조각내기
@@ -352,11 +352,10 @@ for group_name, cols in LAYOUTS[gubun]:
 run = btn_slot.button("🔍 예측 분석 실행", type="primary", use_container_width=True)
 
 # =====================================================================
-# 8. 파이썬 계산 (묶기·세기) + AI 요약 1회 (추천 질문 포함)
+# 8. 연관 사례 찾기 + 중복 정리(파이썬) + AI 묶기·요약 1회
 # =====================================================================
 SAMPLE_N = 200            # 연관도 상위 몇 건을 볼지
-TOP_GROUPS_SHOW = 10      # 파이썬으로 계산해 보여줄 묶음 수
-AI_TOP_K = 10             # AI 요약에 보낼 상위 묶음 수 (요청은 1번만)
+SEND_N = 150              # AI에 보낼 고유 문장 최대 개수 (AI가 여기서 묶음을 만듭니다)
 IGNORE_KEYWORDS = ["안내사항", "개별인증 신청 시 기술원 홈페이지", "인증 신청 시 작성하는", "최신 설계심사 목록표를 참조하여"]
 
 @st.cache_data(show_spinner=False)
@@ -385,7 +384,8 @@ def normalize_for_dedupe(s):
     s = re.sub(r"[^\w가-힣]", "", s)
     return s.lower()
 
-def group_issues(texts):
+def unique_issues(texts):
+    """글자가 완전히 같은 문장(공백·문장부호·페이지 표기 무시)만 하나로 모읍니다. 건수 순서로 반환합니다."""
     groups = {}
     for t in texts:
         t = str(t).strip()
@@ -398,18 +398,17 @@ def group_issues(texts):
     result = []
     for key, forms in groups.items():
         rep = max(forms, key=forms.get)
-        count = sum(forms.values())
-        result.append((rep, count))
+        result.append((rep, sum(forms.values())))
     result.sort(key=lambda x: -x[1])
     return result
 
 @st.cache_data(show_spinner=False)
-def compute_groups(gubun, active_items):
+def compute_issues(gubun, active_items):
     base_n, top = find_matches(gubun, active_items)
     raw = top["부적합내용"].dropna().astype(str).str.strip()
     raw = raw[~raw.apply(lambda x: any(k in x for k in IGNORE_KEYWORDS))]
-    groups = group_issues(raw.tolist())
-    return base_n, len(top), len(raw), groups
+    uniq = unique_issues(raw.tolist())
+    return base_n, len(top), len(raw), uniq
 
 def get_text(resp):
     try:
@@ -426,7 +425,7 @@ def is_truncated(resp):
         return False
 
 def call_gemini(prompt, max_tokens):
-    """(응답 텍스트, 끝까지 생성됐는지) 반환. 재시도 없이 바로 결과를 돌려줍니다."""
+    """(응답 텍스트, 끝까지 생성됐는지) 반환."""
     config = {"max_output_tokens": max_tokens, "temperature": 0.2}
     resp = model.generate_content(
         prompt,
@@ -435,19 +434,20 @@ def call_gemini(prompt, max_tokens):
     )
     return get_text(resp), not is_truncated(resp)
 
-def build_summary_prompt(groups):
-    lines = "\n".join(f"- ({cnt}건) {txt[:200]}" for txt, cnt in groups[:AI_TOP_K])
+def build_analysis_prompt(uniq_items):
+    lines = "\n".join(f"- ({cnt}건) {txt[:200]}" for txt, cnt in uniq_items[:SEND_N])
     return f"""
-    다음은 승강기 설계심사에서 자주 나온 부적합 사항 묶음 목록입니다. 괄호 안 숫자는 실제 건수입니다.
+    다음은 승강기 설계심사에서 입력 조건과 유사한 과거 개별인증 사례의 부적합 사항 목록입니다.
+    괄호 안 숫자는 같은 문장이 나온 건수입니다. 표현만 다르고 뜻이 같은 문장끼리는 스스로 한 묶음으로 합치고, 그 묶음의 건수를 모두 더해 주세요.
 
-    의미 있는 부적합 유형을 최대 5개까지 골라 아래 형식으로 작성해 주세요.
+    합쳐진 묶음 중에서 실제로 자주 반복되는 주요 부적합 유형을 최대 5개까지 골라 아래 형식으로 작성해 주세요.
     억지로 개수를 맞추지 말고, 목록에 없는 내용은 지어내지 마세요.
     - 부적합 내용: 어떤 설계서·도면·계산서가 빠졌거나 어떤 값이 기준과 맞지 않는지 2~3문장으로 구체적으로 설명하세요.
     - 엔지니어링 조언: 설계 단계에서 무엇을 어떤 기준으로 확인하고, 도면이나 계산서에 무엇을 반영해야 하는지 2~3문장으로 구체적으로 쓰세요.
 
     ### [안전기준 세부 조항 번호 및 제목] 핵심 부적합 사유
     * **부적합 내용**: (2~3문장)
-    * **유사 발생 건수**: 약 O건 (관련 묶음 건수의 합계)
+    * **유사 발생 건수**: 약 O건 (합쳐진 묶음의 건수 합계)
     * **엔지니어링 조언**: (2~3문장)
 
     모든 항목을 쓴 뒤, 마지막 줄부터 아래 형식의 줄 3개만 덧붙이세요.
@@ -457,12 +457,11 @@ def build_summary_prompt(groups):
     [추천질문] (질문 2)
     [추천질문] (질문 3)
 
-    목록:
+    부적합 목록:
     {lines}
     """
 
 def split_questions(raw):
-    """본문과 추천 질문을 분리합니다."""
     body, questions = [], []
     for line in raw.split("\n"):
         if line.strip().startswith("[추천질문]"):
@@ -473,11 +472,11 @@ def split_questions(raw):
             body.append(line)
     return "\n".join(body).strip(), questions[:3]
 
-def render_ai_summary(slot, groups, key):
-    """AI 요약과 추천 질문을 조건당 한 번만 만들고 캐시에 저장합니다. 추천 질문 목록을 반환합니다."""
+def render_ai_analysis(slot, uniq_items, key):
+    """AI 묶기·요약과 추천 질문을 조건당 한 번만 만들고 캐시에 저장합니다. 추천 질문 목록을 반환합니다."""
     cache = st.session_state.llm_cache
 
-    if not groups:
+    if not uniq_items:
         slot.info("연관 사례는 있으나 분석할 부적합 내용이 없습니다.")
         return []
     if key in cache:
@@ -488,9 +487,9 @@ def render_ai_summary(slot, groups, key):
         return []
 
     with slot:
-        with st.spinner(f"AI 요약 작성 중... (최대 {AI_TIMEOUT}초)"):
+        with st.spinner(f"AI가 유사 항목을 묶어 정리하는 중... (최대 {AI_TIMEOUT}초)"):
             try:
-                raw, complete = call_gemini(build_summary_prompt(groups), max_tokens=SUMMARY_MAX_TOKENS)
+                raw, complete = call_gemini(build_analysis_prompt(uniq_items), max_tokens=ANALYSIS_MAX_TOKENS)
                 st.session_state.pop("ai_error_key", None)
             except gexc.ResourceExhausted:
                 st.session_state.ai_error_key = key
@@ -522,7 +521,7 @@ if run:
         active_items = tuple(sorted(((c, k, v) for c, (k, v) in active.items()), key=lambda x: x[0]))
 
         with st.spinner("유사 사례를 찾는 중..."):
-            base_n, top_n, raw_n, groups = compute_groups(gubun, active_items)
+            base_n, top_n, raw_n, uniq = compute_issues(gubun, active_items)
 
         # 먼저 ai_key를 저장한 뒤 result를 저장합니다
         st.session_state.ai_key = (gubun, active_items)
@@ -531,9 +530,8 @@ if run:
             "base_n": base_n,
             "top_n": top_n,
             "active_n": len(active),
-            "unique_n": len(groups),
-            "groups": groups[:TOP_GROUPS_SHOW],
-            "ai_groups": groups[:AI_TOP_K],
+            "unique_n": len(uniq),
+            "uniq_items": uniq[:SEND_N],
         }
 
 # =====================================================================
@@ -551,7 +549,7 @@ with result_section:
             c3.metric("입력 항목", f"{r['active_n']}개")
             st.caption(
                 f"전체 {r['base_n']:,}건 중 입력 조건과 가장 가까운 {r['top_n']:,}건을 찾았고, "
-                f"같은 뜻의 문장을 묶어 고유 부적합 {r['unique_n']:,}개로 정리했습니다."
+                f"같은 뜻의 문장을 정리해 고유 부적합 {r['unique_n']:,}개를 AI에 전달했습니다."
             )
 
             st.warning("내용이 모호하거나 확실하지 않은 경우, 반드시 관련 안전기준 원문 항목을 직접 확인하시기 바랍니다.")
@@ -563,7 +561,7 @@ with result_section:
                 st.info("결과가 중간에 끊겼습니다. 예측 분석 실행을 다시 눌러 주세요.")
                 questions = []
             else:
-                questions = render_ai_summary(ai_slot, r["ai_groups"], ai_key)
+                questions = render_ai_analysis(ai_slot, r["uniq_items"], ai_key)
 
         if questions:
             st.markdown('<div class="kh-pill">💡 관련 추천 질문</div>', unsafe_allow_html=True)
