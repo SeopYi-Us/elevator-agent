@@ -151,12 +151,18 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "submit_from_button" not in st.session_state:
     st.session_state.submit_from_button = False
+if "llm_cache" not in st.session_state:
+    st.session_state.llm_cache = {}
 
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
 
 MODEL_NAME = "gemini-3.8-flash"  # 실제 사용 가능한 모델명인지 Google AI Studio에서 확인하세요
 model = genai.GenerativeModel(MODEL_NAME)
+
+# 응답 길이 제한 (이전 1500은 잘림의 원인이었습니다)
+ANALYSIS_MAX_TOKENS = 4096
+CHAT_MAX_TOKENS = 3000
 
 # =====================================================================
 # 3. 기준 문서(PDF) 로드 및 조각내기
@@ -361,10 +367,18 @@ for group_name, cols in LAYOUTS[gubun]:
 run = btn_slot.button("🔍 예측 분석 실행", type="primary", use_container_width=True)
 
 # =====================================================================
-# 8. 연관 사례 찾기 및 AI 요약
+# 8. 연관 사례 찾기, 중복 제거, AI 요약
 # =====================================================================
-SAMPLE_N = 200
+SAMPLE_N = 200          # 연관도 상위 몇 건을 볼지
+MAX_SEND_N = 150        # 중복 제거 후 AI에 보낼 고유 문장 최대 개수
 IGNORE_KEYWORDS = ["안내사항", "개별인증 신청 시 기술원 홈페이지", "인증 신청 시 작성하는", "최신 설계심사 목록표를 참조하여"]
+
+class IncompleteAnswer(Exception):
+    """AI 응답이 길이 제한으로 끊겼을 때 사용합니다."""
+    def __init__(self, partial_text, partial_questions):
+        super().__init__("incomplete")
+        self.partial_text = partial_text
+        self.partial_questions = partial_questions
 
 @st.cache_data(show_spinner=False)
 def find_matches(gubun, active_items):
@@ -385,28 +399,83 @@ def find_matches(gubun, active_items):
     top = tmp.nlargest(SAMPLE_N, "유사도 점수")
     return len(base), top
 
-def call_gemini(prompt, max_tokens=1500):
+def normalize_for_dedupe(s):
+    """같은 뜻 판단용 키: 페이지 표기, 공백, 문장부호, 대소문자 차이를 무시합니다."""
+    s = str(s)
+    s = re.sub(r"\(\s*p\.?\s*\d+[^)]*\)", "", s, flags=re.IGNORECASE)   # (p 5), (p.13) 등
+    s = re.sub(r"\bp\.?\s*\d+\b", "", s, flags=re.IGNORECASE)            # p 5 형태
+    s = re.sub(r"[^\w가-힣]", "", s)                                     # 공백·문장부호 제거
+    return s.lower()
+
+def dedupe_issues(texts):
+    """
+    같은 뜻으로 판단되는 문장을 하나로 묶습니다.
+    반환: [(대표 문장, 묶인 건수), ...] 건수가 많은 순서
+    """
+    groups = {}
+    for t in texts:
+        t = str(t).strip()
+        key = normalize_for_dedupe(t)
+        if not key:
+            continue
+        groups.setdefault(key, {})
+        groups[key][t] = groups[key].get(t, 0) + 1
+
+    result = []
+    for key, forms in groups.items():
+        rep = max(forms, key=forms.get)           # 가장 많이 쓰인 원문을 대표로 사용
+        count = sum(forms.values())
+        result.append((rep, count))
+    result.sort(key=lambda x: -x[1])
+    return result
+
+def is_truncated(resp):
+    try:
+        reason = resp.candidates[0].finish_reason
+        name = getattr(reason, "name", str(reason))
+        return "MAX_TOKENS" in str(name).upper()
+    except Exception:
+        return False
+
+def get_text(resp):
+    try:
+        return resp.text or ""
+    except Exception:
+        return ""
+
+def call_gemini(prompt, max_tokens):
+    """(응답 텍스트, 끝까지 생성됐는지 여부)를 반환합니다. 한도 초과 시 한 번 재시도합니다."""
     config = {"max_output_tokens": max_tokens, "temperature": 0.2}
     try:
-        return model.generate_content(prompt, generation_config=config).text
+        resp = model.generate_content(prompt, generation_config=config)
     except gexc.ResourceExhausted:
         time.sleep(15)
-        return model.generate_content(prompt, generation_config=config).text
+        resp = model.generate_content(prompt, generation_config=config)
+    return get_text(resp), not is_truncated(resp)
 
-@st.cache_data(show_spinner=False)
-def llm_analysis(issues_tuple):
-    issues_text = "\n".join(f"- {txt[:200]}" for txt in issues_tuple)
+def parse_analysis(text):
+    main_content, questions = [], []
+    for line in text.split("\n"):
+        if line.startswith("[추천질문]"):
+            questions.append(line.replace("[추천질문]", "").strip())
+        else:
+            main_content.append(line)
+    return "\n".join(main_content).strip(), questions
+
+def llm_analysis(unique_items):
+    """고유 문장과 건수를 AI에 보내 요약합니다. 끊기면 IncompleteAnswer를 발생시킵니다."""
+    issues_text = "\n".join(f"- ({cnt}건) {txt[:200]}" for txt, cnt in unique_items)
     prompt = f"""
     다음은 승강기 설계심사에서 입력 조건과 유사한 과거 개별인증 사례의 부적합 사항 목록입니다.
+    이미 같은 뜻의 문장은 하나로 묶였고, 괄호 안 숫자는 그 문장이 실제로 나온 건수입니다.
 
-    목록에는 같은 내용을 다르게 표현한 문장이 많이 섞여 있습니다.
-    의미가 유사한 부적합 사항끼리 스스로 묶어서, 실제로 자주 반복되는 주요 부적합 유형만 골라 정리해 주세요.
+    건수가 많은 항목을 중심으로, 의미가 유사한 부적합 사항끼리 한 번 더 묶어서 실제로 자주 반복되는 주요 부적합 유형만 골라 정리해 주세요.
     억지로 개수를 맞추지 말고, 업체 고유의 내용이나 불확실한 부분은 과도하게 해석하지 마세요.
     안전기준 조항은 대분류(예: 6항)가 아닌 세부 조항(예: 6.1.2항, 8.3.2.1항)까지 최대한 구체적으로 적어 주세요.
 
     ### [안전기준 세부 조항 번호 및 제목] 핵심 부적합 사유
     * **부적합 내용**: (객관적 요약 2~3문장)
-    * **유사 발생 건수 예측**: 약 O건
+    * **유사 발생 건수 예측**: 약 O건 (묶인 문장들의 건수 합계 기준)
     * **엔지니어링 조언**: (설계 시 확인해야 할 조언)
 
     모든 내용이 끝난 후 마지막 줄에 아래 형식으로 추천 질문 3개를 적어 주세요.
@@ -417,15 +486,11 @@ def llm_analysis(issues_tuple):
     부적합 목록:
     {issues_text}
     """
-    text = call_gemini(prompt, max_tokens=1500)
-
-    main_content, questions = [], []
-    for line in text.split("\n"):
-        if line.startswith("[추천질문]"):
-            questions.append(line.replace("[추천질문]", "").strip())
-        else:
-            main_content.append(line)
-    return "\n".join(main_content), questions
+    text, complete = call_gemini(prompt, max_tokens=ANALYSIS_MAX_TOKENS)
+    main_text, questions = parse_analysis(text)
+    if not complete:
+        raise IncompleteAnswer(main_text, questions)
+    return main_text, questions
 
 if run:
     active = {c: v for c, v in user_inputs.items() if v is not None}
@@ -439,33 +504,51 @@ if run:
         with st.spinner("유사 사례를 찾는 중..."):
             base_n, top = find_matches(gubun, active_items)
 
-        issues = top["부적합내용"].dropna().astype(str).str.strip()
-        issues = issues[~issues.apply(lambda x: any(k in x for k in IGNORE_KEYWORDS))]
-        issues_tuple = tuple(issues.tolist())
+        raw_issues = top["부적합내용"].dropna().astype(str).str.strip()
+        raw_issues = raw_issues[~raw_issues.apply(lambda x: any(k in x for k in IGNORE_KEYWORDS))]
+
+        unique_items = dedupe_issues(raw_issues.tolist())          # 같은 뜻 문장 묶기
+        send_items = tuple(unique_items[:MAX_SEND_N])              # AI에 보낼 고유 문장
 
         st.session_state.result = {
             "gubun": gubun,
             "base_n": base_n,
             "top_n": len(top),
             "active_n": len(active),
-            "issue_n": len(issues_tuple),
+            "raw_n": len(raw_issues),
+            "unique_n": len(unique_items),
+            "sent_n": len(send_items),
+            "issue_n": len(unique_items),
         }
         st.session_state.pop("analysis_result", None)
         st.session_state.pop("recommended_questions", None)
         st.session_state.pop("analysis_error", None)
+        st.session_state.pop("analysis_truncated", None)
 
-        if issues_tuple:
-            try:
-                with st.spinner("유사한 부적합 사항을 묶어 정리하는 중..."):
-                    main_text, questions = llm_analysis(issues_tuple)
-                st.session_state.analysis_result = main_text
-                st.session_state.recommended_questions = questions
-            except gexc.ResourceExhausted:
-                st.session_state.analysis_error = (
-                    "AI 사용량 한도에 도달했습니다. 잠시 후 다시 분석을 실행해 주세요."
-                )
-            except Exception as e:
-                st.session_state.analysis_error = f"AI 요약 중 오류가 발생했습니다: {e}"
+        if send_items:
+            cache_key = (gubun, active_items)
+            cache = st.session_state.llm_cache
+
+            if cache_key in cache:
+                # 완전히 끝난 결과만 저장해 두었으므로 그대로 재사용합니다
+                st.session_state.analysis_result, st.session_state.recommended_questions = cache[cache_key]
+            else:
+                try:
+                    with st.spinner("유사한 부적합 사항을 묶어 정리하는 중..."):
+                        main_text, questions = llm_analysis(send_items)
+                    st.session_state.analysis_result = main_text
+                    st.session_state.recommended_questions = questions
+                    cache[cache_key] = (main_text, questions)     # 완료된 경우에만 저장
+                except IncompleteAnswer as e:
+                    st.session_state.analysis_result = e.partial_text
+                    st.session_state.recommended_questions = e.partial_questions
+                    st.session_state.analysis_truncated = True    # 캐시에 저장하지 않음
+                except gexc.ResourceExhausted:
+                    st.session_state.analysis_error = (
+                        "AI 사용량 한도에 도달했습니다. 잠시 후 다시 분석을 실행해 주세요."
+                    )
+                except Exception as e:
+                    st.session_state.analysis_error = f"AI 요약 중 오류가 발생했습니다: {e}"
 
 # =====================================================================
 # 9. 분석 결과 (환영 배너와 질의응답 사이에 표시)
@@ -480,13 +563,18 @@ with result_section:
             c1.metric("유형", r["gubun"])
             c2.metric("분석 대상", f"{r['top_n']:,}건")
             c3.metric("입력 항목", f"{r['active_n']}개")
-            st.caption(f"전체 {r['base_n']:,}건 중 입력 조건과 가장 가까운 {r['top_n']:,}건을 분석했습니다.")
+            st.caption(
+                f"전체 {r['base_n']:,}건 중 입력 조건과 가장 가까운 {r['top_n']:,}건을 찾았고, "
+                f"같은 뜻의 문장을 묶은 뒤 고유 부적합 {r['unique_n']:,}건 중 상위 {r['sent_n']:,}건을 AI에 전달했습니다."
+            )
 
             st.warning("내용이 모호하거나 확실하지 않은 경우, 반드시 관련 안전기준 원문 항목을 직접 확인하시기 바랍니다.")
 
             if st.session_state.get("analysis_error"):
                 st.error(st.session_state.analysis_error)
             elif st.session_state.get("analysis_result"):
+                if st.session_state.get("analysis_truncated"):
+                    st.warning("AI 응답이 길이 제한에 걸려 끊겼습니다. 아래는 일부 결과입니다. 같은 조건으로 다시 실행하면 새로 생성됩니다.")
                 st.markdown(st.session_state.analysis_result)
             elif r["issue_n"] == 0:
                 st.info("연관 사례는 있으나 분석할 부적합 내용이 없습니다.")
@@ -551,8 +639,10 @@ if trigger:
                 사용자 질문: {latest_user_msg}
                 """
                 try:
-                    answer = call_gemini(system_prompt, max_tokens=2000)
+                    answer, complete = call_gemini(system_prompt, max_tokens=CHAT_MAX_TOKENS)
                     st.markdown(answer)
+                    if not complete:
+                        st.warning("답변이 길이 제한에 걸려 끊겼습니다. 질문을 나눠서 다시 물어보시면 좋습니다.")
                     st.session_state.messages.append({"role": "assistant", "content": answer})
                 except gexc.ResourceExhausted:
                     st.error("AI 사용량 한도에 도달했습니다. 잠시 후 다시 질문해 주세요.")
